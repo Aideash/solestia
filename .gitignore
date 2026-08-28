@@ -1,0 +1,12 @@
+node_modules
+dist
+*.local
+.env
+.DS_Store
+*.log
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+.cursor/*

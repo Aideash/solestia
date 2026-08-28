@@ -1,0 +1,32 @@
+@use 'variables' as *;
+
+:root {
+  --bg: #0b1020;
+  --bg-raised: #141a2e;
+  --border: #2a3352;
+  --text: #e8edf7;
+  --text-dim: #8b97b5;
+  --accent: #f5c542;
+  --font-family: system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: $color-bg;
+  color: $color-text;
+  font-family: $font-sans;
+}
