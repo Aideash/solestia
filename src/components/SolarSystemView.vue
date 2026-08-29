@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import type { PlanetId } from '../data/planets.ts'
 import { orbitPoint, wrapRad, type SolarSystemSnapshot } from '../lib/kepler.ts'
 
 const props = defineProps<{
   snapshot: SolarSystemSnapshot
+  selectedPlanet?: PlanetId | null
 }>()
+
+const emit = defineEmits<{ select: [id: PlanetId] }>()
 
 const size = 100
 const cx = size / 2
@@ -66,6 +70,49 @@ const rings = computed(() => {
   })
 })
 
+/**
+ * Roving tabindex: the table is a single tab stop, then the arrow keys walk the
+ * rows. The dials and the orrery stay click-only so the same eight planets don't
+ * turn up three times in the tab order.
+ */
+const focusedPlanet = ref<PlanetId | null>(null)
+
+const tabStopPlanet = computed(
+  () => focusedPlanet.value ?? props.selectedPlanet ?? props.snapshot.planets[0]?.id ?? null,
+)
+
+function focusRow(row: Element | null | undefined) {
+  if (row instanceof HTMLElement) row.focus()
+}
+
+function onRowKeydown(event: KeyboardEvent, id: PlanetId) {
+  const row = event.currentTarget as HTMLTableRowElement
+  const body = row.parentElement
+  if (!body) return
+
+  switch (event.key) {
+    case 'ArrowDown':
+      focusRow(row.nextElementSibling ?? body.firstElementChild)
+      break
+    case 'ArrowUp':
+      focusRow(row.previousElementSibling ?? body.lastElementChild)
+      break
+    case 'Home':
+      focusRow(body.firstElementChild)
+      break
+    case 'End':
+      focusRow(body.lastElementChild)
+      break
+    case 'Enter':
+    case ' ':
+      emit('select', id)
+      break
+    default:
+      return
+  }
+  event.preventDefault()
+}
+
 const rows = computed(() =>
   props.snapshot.planets.map((planet) => {
     const rotationDays =
@@ -111,14 +158,21 @@ const rows = computed(() =>
       </desc>
       <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
       <text class="axis-label" :x="perihelionMark.x" :y="perihelionMark.y" text-anchor="middle">
-        peri
-        <title>Aphelion - Nearest Point to the Sun</title>
+        ⊕
+        <tspan baseline-shift="sub" font-size="0.75em">peri</tspan>
+        <title>Perihelion - Nearest Point to the Sun</title>
       </text>
       <text class="axis-label" :x="aphelionMark.x" :y="aphelionMark.y + 2.2" text-anchor="middle">
-        aph
+        ⊕
+        <tspan baseline-shift="sub" font-size="0.75em">aph</tspan>
         <title>Aphelion - Farthest Point from the Sun</title>
       </text>
-      <g v-for="ring in rings" :key="ring.planet.id">
+      <g
+        v-for="ring in rings"
+        :key="ring.planet.id"
+        :class="{ selected: selectedPlanet === ring.planet.id }"
+        @click="emit('select', ring.planet.id)"
+      >
         <circle class="orbit" :cx="cx" :cy="cy" :r="ring.r" />
         <line
           class="peri-tick"
@@ -137,7 +191,7 @@ const rows = computed(() =>
           <title>{{ ring.planet.name }}</title>
         </circle>
       </g>
-      <circle class="sun" :cx="cx" :cy="cy" r="3.1" />
+      <circle class="sun" :cx="cx" :cy="cy" r="3.5" />
     </svg>
 
     <table class="readout">
@@ -162,9 +216,11 @@ const rows = computed(() =>
               and its perihelion.
             </p>
             <p>
-              <strong>P<sub>rot</sub></strong> is the rotation period. Click the heading to switch
-              between a sidereal day (one spin relative to the stars) and a solar day (noon to
-              noon). Hover a value for that planet’s axial tilt.
+              <strong>P<sub>rot</sub></strong> is the rotation period in the longitude system chosen
+              at the top of the page (IAU cartographic W, magnetic System III, or cloud features).
+              Inner planets have only the IAU frame, so magnetic and cloud leave them unchanged.
+              Click the heading to switch between a sidereal day (one spin relative to the stars)
+              and a solar day (noon to noon). Hover a value for that planet’s axial tilt.
             </p>
             <p>
               <strong>P<sub>orb</sub></strong> is the sidereal orbital period — one revolution
@@ -212,7 +268,16 @@ const rows = computed(() =>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in rows" :key="row.planet.id">
+        <tr
+          v-for="row in rows"
+          :key="row.planet.id"
+          :class="{ selected: selectedPlanet === row.planet.id }"
+          :tabindex="tabStopPlanet === row.planet.id ? 0 : -1"
+          :aria-current="selectedPlanet === row.planet.id ? 'true' : undefined"
+          @click="emit('select', row.planet.id)"
+          @focus="focusedPlanet = row.planet.id"
+          @keydown="onRowKeydown($event, row.planet.id)"
+        >
           <th scope="row">
             <span class="swatch" :style="{ background: row.planet.color }"></span>
             {{ row.planet.name }}
@@ -253,8 +318,22 @@ const rows = computed(() =>
   height: auto;
   display: block;
 
-  g:hover {
-    opacity: 0.5;
+  g {
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.6;
+    }
+
+    &.selected:hover {
+      opacity: 0.8;
+    }
+  }
+
+  &:has(g.selected) {
+    g:not(.selected):not(:hover) {
+      opacity: 0.4;
+    }
   }
 }
 
@@ -414,6 +493,31 @@ thead th {
 tbody th {
   font-weight: 500;
   white-space: nowrap;
+}
+
+tbody tr {
+  cursor: pointer;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+    outline-offset: -1px;
+  }
+
+  &:hover {
+    box-shadow: 0px 0px 20px 0px var(--border) inset;
+  }
+
+  &.selected {
+    box-shadow: 0px 0px 25px 0px color-mix(in srgb, var(--border), var(--border-strong)) inset;
+  }
+
+  &.selected:hover {
+    box-shadow: 0px 0px 25px 0px var(--border-strong) inset;
+  }
 }
 
 .swatch {

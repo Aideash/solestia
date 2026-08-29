@@ -4,7 +4,11 @@ import type { PlanetState } from '../lib/kepler.ts'
 
 const props = defineProps<{
   planet: PlanetState
+  mirroredLabel?: boolean
+  selected?: boolean
 }>()
+
+const emit = defineEmits<{ select: [] }>()
 
 const cx = 50
 const cy = 50
@@ -99,12 +103,25 @@ const label = computed(() => {
 <template>
   <svg
     class="clock"
+    :class="{ selected }"
     viewBox="0 0 100 100"
     role="img"
     :aria-label="label"
     :style="{ '--dial-body': planet.color }"
+    @click="emit('select')"
   >
     <title>{{ label }}</title>
+
+    <text
+      v-if="planet.symbol"
+      class="clock__symbol"
+      :x="mirroredLabel ? 100 : 0"
+      y="1em"
+      :text-anchor="mirroredLabel ? 'end' : 'start'"
+      fill="currentColor"
+    >
+      {{ planet.symbol }}
+    </text>
 
     <circle class="clock__edge" :cx="cx" :cy="cy" :r="rimRadius + rimWidth / 2 + 2" />
     <circle class="clock__rim-track" :cx="cx" :cy="cy" :r="rimRadius" :stroke-width="rimWidth" />
@@ -157,6 +174,7 @@ const label = computed(() => {
   display: block;
   width: 100%;
   height: auto;
+  cursor: pointer;
 }
 
 /*

@@ -1,9 +1,10 @@
 @use 'variables' as *;
 
 :root {
-  --bg: #0b1020;
+  --bg: #070b15;
   --bg-raised: #141a2e;
   --border: #2a3352;
+  --border-strong: #3a4562;
   --text: #e8edf7;
   --text-dim: #8b97b5;
   --accent: #f5c542;
@@ -16,6 +17,11 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg-raised);
 }
 
 html,

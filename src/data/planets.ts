@@ -4,12 +4,11 @@
  * (valid 1800–2050). Angles in degrees; rates per Julian century (T).
  * https://ssd.jpl.nasa.gov/planets/approx_pos.html
  *
- * Sidereal rotation periods: NASA Planetary Fact Sheet
- * https://nssdc.gsfc.nasa.gov/planetary/factsheet/
  * Spin axis directions: IAU WGCCRE 2015 pole right ascension/declination,
  * rotated into ecliptic-of-J2000 coordinates. Poles for retrograde rotators
  * (Venus, Uranus) are flipped so the stored vector is the angular velocity
- * itself, i.e. right-handed about the direction of spin.
+ * itself, i.e. right-handed about the direction of spin. |ω| is taken from
+ * the IAU prime-meridian rate so the table cannot drift from the default clock.
  *
  * Pole and prime meridian (`iau`): IAU WGCCRE 2015, as tabulated in NAIF
  * pck00011.tpc (BODY199_POLE_RA … BODY899_PM). Unlike `rotation`, these are
@@ -18,10 +17,16 @@
  * are omitted; the largest error that introduces is Neptune's ±0.7° pole
  * wobble, then Mercury's ~0.03° librations.
  * https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/
+ *
+ * Extra meridians (`magnetic`, `cloud`, `otherMeridians`) share that pole and
+ * only override W. Missing extras fall back to `iau`. See `frameFor`.
  */
 
 export type PlanetId =
   'mercury' | 'venus' | 'earth' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
+
+export const ROTATION_FRAME_CHOICES = ['iau', 'magnetic', 'cloud'] as const
+export type RotationFrameChoice = (typeof ROTATION_FRAME_CHOICES)[number]
 
 export type KeplerianElements = {
   a0: number
@@ -69,18 +74,41 @@ export type IauFrame = {
   wDot: number
 }
 
+/** Prime-meridian override; the pole is always copied from `iau`. */
+export type PrimeMeridian = Pick<IauFrame, 'w0' | 'wDot'>
+
+export type NamedMeridian = PrimeMeridian & {
+  id: string
+  label: string
+}
+
 export type Planet = {
   id: PlanetId
   name: string
   color: string
   rotation: RotationAxis
   iau: IauFrame
+  /** System III / radio, when it is not the IAU cartographic W. */
+  magnetic?: PrimeMeridian
+  /** Optically tracked atmosphere, when it is not the IAU cartographic W. */
+  cloud?: PrimeMeridian
+  /** Extra published rates that the UI does not select (e.g. Jupiter System II). */
+  otherMeridians?: NamedMeridian[]
   elements: KeplerianElements
+  /* Unicode/Astrological symbol */
+  symbol?: string
 }
 
-/** Sidereal rotation period in days to |ω| in radians per day. */
-function spinRate(siderealRotationDays: number): number {
-  return (2 * Math.PI) / siderealRotationDays
+/** |ω| in rad/day from an IAU prime-meridian rate in deg/day. */
+function omegaFromWDot(wDot: number): number {
+  return (2 * Math.PI * Math.abs(wDot)) / 360
+}
+
+/** Resolved body frame for a UI choice; missing extras use the IAU W. */
+export function frameFor(planet: Planet, choice: RotationFrameChoice): IauFrame {
+  const override =
+    choice === 'magnetic' ? planet.magnetic : choice === 'cloud' ? planet.cloud : undefined
+  return override ? { ...planet.iau, ...override } : planet.iau
 }
 
 export const PLANETS: Planet[] = [
@@ -88,7 +116,8 @@ export const PLANETS: Planet[] = [
     id: 'mercury',
     name: 'Mercury',
     color: '#b0b4bc',
-    rotation: { r: spinRate(58.6462), theta: 7.0369, phi: 318.2353 },
+    symbol: '☿', // Mercury
+    rotation: { r: omegaFromWDot(6.1385108), theta: 7.0369, phi: 318.2353 },
     iau: {
       ra0: 281.0103,
       raDot: -0.0328,
@@ -116,7 +145,8 @@ export const PLANETS: Planet[] = [
     id: 'venus',
     name: 'Venus',
     color: '#e8c87a',
-    rotation: { r: spinRate(243.0226), theta: 178.761, phi: 210.1867 },
+    symbol: '♀', // Copper
+    rotation: { r: omegaFromWDot(-1.4813688), theta: 178.761, phi: 210.1867 },
     iau: {
       ra0: 272.76,
       raDot: 0,
@@ -144,7 +174,8 @@ export const PLANETS: Planet[] = [
     id: 'earth',
     name: 'Earth',
     color: '#237523',
-    rotation: { r: spinRate(0.99726968), theta: 23.4393, phi: 90 },
+    symbol: '⊕', // Antimony
+    rotation: { r: omegaFromWDot(360.9856235), theta: 23.4393, phi: 90 },
     iau: {
       ra0: 0,
       raDot: -0.641,
@@ -172,7 +203,8 @@ export const PLANETS: Planet[] = [
     id: 'mars',
     name: 'Mars',
     color: '#c1440e',
-    rotation: { r: spinRate(1.02595676), theta: 25.4038, phi: 354.8436 },
+    symbol: '♂', // Iron
+    rotation: { r: omegaFromWDot(350.891982443297), theta: 25.4038, phi: 354.8436 },
     iau: {
       ra0: 317.269202,
       raDot: -0.10927547,
@@ -200,8 +232,9 @@ export const PLANETS: Planet[] = [
     id: 'jupiter',
     name: 'Jupiter',
     color: '#d4a574',
-    rotation: { r: spinRate(0.41354), theta: 2.2165, phi: 247.8177 },
-    // System III, the rotation of Jupiter's magnetic field.
+    symbol: '♃', // Tin
+    rotation: { r: omegaFromWDot(870.536), theta: 2.2165, phi: 247.8177 },
+    // System III (magnetic). Seidelmann et al. 2002 also lists Systems I and II.
     iau: {
       ra0: 268.056595,
       raDot: -0.006499,
@@ -210,6 +243,8 @@ export const PLANETS: Planet[] = [
       w0: 284.95,
       wDot: 870.536,
     },
+    cloud: { w0: 67.1, wDot: 877.9 },
+    otherMeridians: [{ id: 'systemII', label: 'System II', w0: 43.3, wDot: 870.27 }],
     elements: {
       a0: 5.202887,
       aDot: -0.00011607,
@@ -229,8 +264,11 @@ export const PLANETS: Planet[] = [
     id: 'saturn',
     name: 'Saturn',
     color: '#e6d9a8',
-    rotation: { r: spinRate(0.44401), theta: 28.0522, phi: 79.5275 },
-    // System III, the rotation of Saturn's magnetic field.
+    symbol: '♄', // Lead
+    rotation: { r: omegaFromWDot(810.7939024), theta: 28.0522, phi: 79.5275 },
+    // System III (Voyager radio). IAU no longer tabulates System I; observers
+    // still use 10h 14m (844.3 °/d) for the equatorial zone. W0 is the
+    // traditional Davies et al. 1980 value.
     iau: {
       ra0: 40.589,
       raDot: -0.036,
@@ -239,6 +277,7 @@ export const PLANETS: Planet[] = [
       w0: 38.9,
       wDot: 810.7939024,
     },
+    cloud: { w0: 227.2037, wDot: 844.3 },
     elements: {
       a0: 9.53667594,
       aDot: -0.0012506,
@@ -258,8 +297,9 @@ export const PLANETS: Planet[] = [
     id: 'uranus',
     name: 'Uranus',
     color: '#7de3e0',
-    rotation: { r: spinRate(0.71833), theta: 97.7218, phi: 77.6467 },
-    // System III, the rotation of Uranus's magnetic field.
+    symbol: '♅', // Platinum
+    rotation: { r: omegaFromWDot(-501.1600928), theta: 97.7218, phi: 77.6467 },
+    // System III (magnetic). No IAU cloud W — cloud mode falls back to this.
     iau: {
       ra0: 257.311,
       raDot: 0,
@@ -287,10 +327,10 @@ export const PLANETS: Planet[] = [
     id: 'neptune',
     name: 'Neptune',
     color: '#4166f5',
-    rotation: { r: spinRate(0.67125), theta: 28.0264, phi: 319.2351 },
-    // System II, tracking optically observed cloud features. This spins faster
-    // than the magnetic System III period in `rotation` above: 15.97 h against
-    // 16.11 h. The clock follows the surface you could actually watch.
+    symbol: '♆', // Bismuth
+    rotation: { r: omegaFromWDot(541.1397757), theta: 28.0264, phi: 319.2351 },
+    // IAU 2015: Karkoschka south-polar cloud features (~15.97 h). Magnetic
+    // System III is the pre-2015 radio W (~16.11 h, Seidelmann et al. 2002).
     iau: {
       ra0: 299.36,
       raDot: 0,
@@ -299,6 +339,7 @@ export const PLANETS: Planet[] = [
       w0: 249.978,
       wDot: 541.1397757,
     },
+    magnetic: { w0: 253.18, wDot: 536.3128492 },
     elements: {
       a0: 30.06992276,
       aDot: 0.00026291,

@@ -1,9 +1,11 @@
 import {
   PLANETS,
+  frameFor,
   type IauFrame,
   type Planet,
   type PlanetId,
   type RotationAxis,
+  type RotationFrameChoice,
 } from '../data/planets.ts'
 
 const J2000 = 2451545.0
@@ -19,6 +21,7 @@ export type PlanetState = {
   id: PlanetId
   name: string
   color: string
+  symbol?: string
   /** Semi-major axis in AU (unused for equal-ring display). */
   a: number
   e: number
@@ -275,27 +278,35 @@ export function localSolarTime(
   }
 }
 
-function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState {
+function planetState(
+  planet: Planet,
+  t: number,
+  earthVarpi: number,
+  rotationFrame: RotationFrameChoice,
+): PlanetState {
   const { a, e, L, varpi, i, Omega } = evaluate(planet, t)
   const meanAnomaly = wrapRadSigned(L - varpi)
   const E = eccentricAnomaly(meanAnomaly, e)
   const nu = trueAnomalyFromE(E, e)
   const longitude = wrapRad(varpi + nu)
-  const siderealRotationDays = (2 * Math.PI) / planet.rotation.r
+  const iau = frameFor(planet, rotationFrame)
+  const siderealRotationDays = 360 / Math.abs(iau.wDot)
   const retrograde = planet.rotation.theta > 90
   const siderealOrbitDays = (360 * 36525) / planet.elements.LDot
   const position = heliocentricEcliptic(a, e, E, i, Omega, varpi)
   const { dayFraction, subsolarLatitude } = localSolarTime(
-    planet.iau,
+    iau,
     position,
     t * 36525,
     360 / siderealOrbitDays,
   )
   const solarDay = solarDayDays(siderealRotationDays, siderealOrbitDays, retrograde)
+  const spinRate = (2 * Math.PI) / siderealRotationDays
   return {
     id: planet.id,
     name: planet.name,
     color: planet.color,
+    symbol: planet.symbol,
     a,
     e,
     meanAnomaly: wrapRad(meanAnomaly),
@@ -303,7 +314,7 @@ function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState
     perihelionLongitude: wrapRad(varpi),
     longitude,
     offsetFromEarthPerihelion: wrapRad(longitude - earthVarpi),
-    rotation: planet.rotation,
+    rotation: { ...planet.rotation, r: spinRate },
     siderealRotationDays,
     solarDayDays: solarDay,
     obliquity: degToRad(planet.rotation.theta),
@@ -317,7 +328,10 @@ function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState
   }
 }
 
-export function solarSystemAt(date: Date): SolarSystemSnapshot {
+export function solarSystemAt(
+  date: Date,
+  rotationFrame: RotationFrameChoice = 'iau',
+): SolarSystemSnapshot {
   const t = centuriesSinceJ2000(date)
   const earth = PLANETS.find((p) => p.id === 'earth')
   if (!earth) {
@@ -327,6 +341,6 @@ export function solarSystemAt(date: Date): SolarSystemSnapshot {
   return {
     at: date,
     earthPerihelionLongitude: earthVarpi,
-    planets: PLANETS.map((planet) => planetState(planet, t, earthVarpi)),
+    planets: PLANETS.map((planet) => planetState(planet, t, earthVarpi, rotationFrame)),
   }
 }

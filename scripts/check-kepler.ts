@@ -1,4 +1,4 @@
-import { PLANETS } from '../src/data/planets.ts'
+import { PLANETS, frameFor } from '../src/data/planets.ts'
 import { bodyFrame, equatorialToEcliptic, solarSystemAt, wrapRadSigned } from '../src/lib/kepler.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -84,8 +84,12 @@ function fractionGap(a: number, b: number): number {
   return Math.min(diff, 1 - diff)
 }
 
-function planetAt(dateIso: string, id: string) {
-  const state = solarSystemAt(new Date(dateIso)).planets.find((p) => p.id === id)
+function planetAt(
+  dateIso: string,
+  id: string,
+  rotationFrame: 'iau' | 'magnetic' | 'cloud' = 'iau',
+) {
+  const state = solarSystemAt(new Date(dateIso), rotationFrame).planets.find((p) => p.id === id)
   assert(state, `${id} missing from ${dateIso} snapshot`)
   return state
 }
@@ -141,9 +145,9 @@ const dayStart = solarSystemAt(new Date('2026-03-05T00:00:00Z'))
 for (const planet of dayStart.planets) {
   const later = new Date(dayStart.at.getTime() + planet.solarDayDays * 86_400_000)
   const nextDay = planetAt(later.toISOString(), planet.id)
-  // Venus and Neptune drift a little more: their rotation periods come from the
-  // fact sheet while the dial runs on the IAU prime meridian rate.
-  const tolerance = planet.id === 'neptune' || planet.id === 'venus' ? 0.01 : 0.001
+  // Apparent solar time vs the mean solar day: Venus's slow retrograde spin
+  // leaves a few minutes of equation-of-time drift. Periods now share one W.
+  const tolerance = planet.id === 'venus' ? 0.005 : 0.001
   assert(
     fractionGap(planet.dayFraction, nextDay.dayFraction) < tolerance,
     `${planet.name} should read the same local time one solar day on, off by ${fractionGap(
@@ -152,6 +156,49 @@ for (const planet of dayStart.planets) {
     ).toFixed(4)}`,
   )
 }
+
+function hoursFromWDot(wDot: number): number {
+  return (360 / Math.abs(wDot)) * 24
+}
+
+const neptune = PLANETS.find((p) => p.id === 'neptune')
+const jupiter = PLANETS.find((p) => p.id === 'jupiter')
+assert(neptune && jupiter, 'Neptune or Jupiter missing from catalogue')
+
+assert(
+  Math.abs(hoursFromWDot(frameFor(neptune, 'iau').wDot) - 15.966) < 0.01,
+  `Neptune IAU/cloud should be ~15.97 h, got ${hoursFromWDot(frameFor(neptune, 'iau').wDot)}`,
+)
+assert(
+  Math.abs(hoursFromWDot(frameFor(neptune, 'cloud').wDot) - 15.966) < 0.01,
+  'Neptune cloud should be the IAU 2015 W',
+)
+assert(
+  Math.abs(hoursFromWDot(frameFor(neptune, 'magnetic').wDot) - 16.11) < 0.01,
+  `Neptune magnetic should be ~16.11 h, got ${hoursFromWDot(frameFor(neptune, 'magnetic').wDot)}`,
+)
+
+const jupiterIauHours = hoursFromWDot(frameFor(jupiter, 'iau').wDot)
+const jupiterMagHours = hoursFromWDot(frameFor(jupiter, 'magnetic').wDot)
+const jupiterCloudHours = hoursFromWDot(frameFor(jupiter, 'cloud').wDot)
+assert(
+  Math.abs(jupiterIauHours - jupiterMagHours) < 1e-9,
+  'Jupiter IAU should be magnetic System III',
+)
+assert(
+  Math.abs(jupiterCloudHours - 9.8417) < 0.002,
+  `Jupiter cloud (System I) should be ~9.84 h, got ${jupiterCloudHours}`,
+)
+assert(jupiterCloudHours < jupiterIauHours, 'Jupiter System I should spin faster than System III')
+
+const neptuneMag = solarSystemAt(new Date('2026-03-05T00:00:00Z'), 'magnetic').planets.find(
+  (p) => p.id === 'neptune',
+)
+assert(neptuneMag, 'Neptune missing from magnetic snapshot')
+assert(
+  Math.abs(neptuneMag.siderealRotationDays * 24 - 16.11) < 0.01,
+  `Neptune magnetic table period should be ~16.11 h, got ${neptuneMag.siderealRotationDays * 24}`,
+)
 
 // The IAU pole should reproduce the hand-converted ecliptic spin axis, and its
 // prime meridian rate should reproduce the tabulated rotation period.
@@ -171,11 +218,8 @@ for (const planet of PLANETS) {
   )
   const iauRotationDays = 360 / Math.abs(planet.iau.wDot)
   const storedRotationDays = (2 * Math.PI) / planet.rotation.r
-  // Neptune is the one real disagreement: the IAU tracks optically observed
-  // clouds (System II, 15.97 h), the fact sheet the magnetic field (16.11 h).
-  const rotationTolerance = planet.id === 'neptune' ? 0.007 : planet.id === 'venus' ? 0.005 : 0.0001
   assert(
-    Math.abs(iauRotationDays - storedRotationDays) < rotationTolerance,
+    Math.abs(iauRotationDays - storedRotationDays) < 1e-12,
     `${planet.name} IAU rotation ${iauRotationDays.toFixed(6)} d should match stored ${storedRotationDays.toFixed(6)} d`,
   )
 }
