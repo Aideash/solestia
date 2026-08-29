@@ -1,4 +1,5 @@
-import { solarSystemAt, wrapRadSigned } from '../src/lib/kepler.ts'
+import { PLANETS } from '../src/data/planets.ts'
+import { bodyFrame, equatorialToEcliptic, solarSystemAt, wrapRadSigned } from '../src/lib/kepler.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -77,6 +78,111 @@ assert(
   `expected Venus and Uranus to be retrograde, got ${retrograde.join(',') || 'none'}`,
 )
 
+/** Smallest distance between two clock fractions, allowing for the wrap at 1. */
+function fractionGap(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 1
+  return Math.min(diff, 1 - diff)
+}
+
+function planetAt(dateIso: string, id: string) {
+  const state = solarSystemAt(new Date(dateIso)).planets.find((p) => p.id === id)
+  assert(state, `${id} missing from ${dateIso} snapshot`)
+  return state
+}
+
+// Local solar noon at Greenwich. The gap from exactly 0.5 is the equation of
+// time, a few minutes either way, plus ~75 s from the IAU's approximate
+// expression for Earth's prime meridian.
+for (const noon of ['2026-01-03T12:00:00Z', '2026-06-21T12:00:00Z', '2026-09-15T12:00:00Z']) {
+  const earth = planetAt(noon, 'earth')
+  assert(
+    fractionGap(earth.dayFraction, 0.5) < 0.012,
+    `Earth should read local noon at ${noon}, got ${earth.dayFraction.toFixed(4)} of a day`,
+  )
+}
+
+const earthMidnight = planetAt('2026-06-21T00:00:00Z', 'earth')
+assert(
+  fractionGap(earthMidnight.dayFraction, 0) < 0.012,
+  `Earth should read local midnight at 00:00 UT, got ${earthMidnight.dayFraction.toFixed(4)}`,
+)
+
+const earthEvening = planetAt('2026-06-21T18:00:00Z', 'earth')
+assert(
+  fractionGap(earthEvening.dayFraction, 0.75) < 0.012,
+  `Earth should be three quarters through its day at 18:00 UT, got ${earthEvening.dayFraction.toFixed(4)}`,
+)
+
+assert(
+  fractionGap(earthPeri.yearFraction, 0) < 0.01,
+  `Earth's year dial should sit at perihelion on 2026-01-03, got ${earthPeri.yearFraction.toFixed(4)}`,
+)
+assert(
+  fractionGap(earthAph.yearFraction, 0.5) < 0.01,
+  `Earth's year dial should be half way at aphelion, got ${earthAph.yearFraction.toFixed(4)}`,
+)
+
+// The subsolar point reaches the tropics at the solstices, which exercises the
+// 3D position, the ecliptic-to-equatorial rotation and the pole together.
+const junSolstice = planetAt('2026-06-21T09:00:00Z', 'earth')
+const decSolstice = planetAt('2026-12-21T15:00:00Z', 'earth')
+assert(
+  Math.abs(deg(junSolstice.subsolarLatitude) - 23.44) < 0.02,
+  `Sun should stand over the Tropic of Cancer in June, got ${deg(junSolstice.subsolarLatitude).toFixed(2)}°`,
+)
+assert(
+  Math.abs(deg(decSolstice.subsolarLatitude) + 23.44) < 0.02,
+  `Sun should stand over the Tropic of Capricorn in December, got ${deg(decSolstice.subsolarLatitude).toFixed(2)}°`,
+)
+
+// One solar day later every dial should read the same time, which is what
+// proves the hour angle runs forwards on the retrograde rotators too.
+const dayStart = solarSystemAt(new Date('2026-03-05T00:00:00Z'))
+for (const planet of dayStart.planets) {
+  const later = new Date(dayStart.at.getTime() + planet.solarDayDays * 86_400_000)
+  const nextDay = planetAt(later.toISOString(), planet.id)
+  // Venus and Neptune drift a little more: their rotation periods come from the
+  // fact sheet while the dial runs on the IAU prime meridian rate.
+  const tolerance = planet.id === 'neptune' || planet.id === 'venus' ? 0.01 : 0.001
+  assert(
+    fractionGap(planet.dayFraction, nextDay.dayFraction) < tolerance,
+    `${planet.name} should read the same local time one solar day on, off by ${fractionGap(
+      planet.dayFraction,
+      nextDay.dayFraction,
+    ).toFixed(4)}`,
+  )
+}
+
+// The IAU pole should reproduce the hand-converted ecliptic spin axis, and its
+// prime meridian rate should reproduce the tabulated rotation period.
+for (const planet of PLANETS) {
+  const pole = equatorialToEcliptic(bodyFrame(planet.iau, 0).pole)
+  const spin = Math.sign(planet.iau.wDot)
+  const theta = deg(Math.acos(spin * pole.z))
+  const phi = (deg(Math.atan2(spin * pole.y, spin * pole.x)) + 360) % 360
+  assert(
+    Math.abs(theta - planet.rotation.theta) < 0.001,
+    `${planet.name} IAU pole tilt ${theta.toFixed(4)}° should match stored ${planet.rotation.theta}°`,
+  )
+  const phiGap = Math.abs((((phi - planet.rotation.phi + 540) % 360) - 180) % 360)
+  assert(
+    phiGap < 0.001,
+    `${planet.name} IAU pole azimuth ${phi.toFixed(4)}° should match stored ${planet.rotation.phi}°`,
+  )
+  const iauRotationDays = 360 / Math.abs(planet.iau.wDot)
+  const storedRotationDays = (2 * Math.PI) / planet.rotation.r
+  // Neptune is the one real disagreement: the IAU tracks optically observed
+  // clouds (System II, 15.97 h), the fact sheet the magnetic field (16.11 h).
+  const rotationTolerance = planet.id === 'neptune' ? 0.007 : planet.id === 'venus' ? 0.005 : 0.0001
+  assert(
+    Math.abs(iauRotationDays - storedRotationDays) < rotationTolerance,
+    `${planet.name} IAU rotation ${iauRotationDays.toFixed(6)} d should match stored ${storedRotationDays.toFixed(6)} d`,
+  )
+}
+
 console.log(
   `ok  Earth ν ${deg(earthPeri.trueAnomaly).toFixed(1)}° on 2026-01-03, ${deg(earthAph.trueAnomaly).toFixed(1)}° on 2026-07-04`,
+)
+console.log(
+  `ok  Earth local solar time ${(earthPeri.dayFraction * 24).toFixed(2)} h at 12:00 UT, subsolar latitude ${deg(junSolstice.subsolarLatitude).toFixed(2)}° at the June solstice`,
 )

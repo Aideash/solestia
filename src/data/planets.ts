@@ -10,6 +10,14 @@
  * rotated into ecliptic-of-J2000 coordinates. Poles for retrograde rotators
  * (Venus, Uranus) are flipped so the stored vector is the angular velocity
  * itself, i.e. right-handed about the direction of spin.
+ *
+ * Pole and prime meridian (`iau`): IAU WGCCRE 2015, as tabulated in NAIF
+ * pck00011.tpc (BODY199_POLE_RA … BODY899_PM). Unlike `rotation`, these are
+ * verbatim IAU values: the pole is always the north pole, so retrograde
+ * rotators simply have a negative wDot. Periodic nutation and libration terms
+ * are omitted; the largest error that introduces is Neptune's ±0.7° pole
+ * wobble, then Mercury's ~0.03° librations.
+ * https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/
  */
 
 export type PlanetId =
@@ -43,11 +51,30 @@ export type RotationAxis = {
   phi: number
 }
 
+/**
+ * IAU pole direction and prime meridian angle W = w0 + wDot·d, where d is days
+ * from J2000 and T is Julian centuries from J2000. W is measured easterly along
+ * the body equator from its ascending node on the ICRF equator.
+ */
+export type IauFrame = {
+  /** Pole right ascension in the ICRF, degrees, and its rate per century. */
+  ra0: number
+  raDot: number
+  /** Pole declination in the ICRF, degrees, and its rate per century. */
+  dec0: number
+  decDot: number
+  /** Prime meridian angle at J2000, degrees. */
+  w0: number
+  /** Prime meridian rate, degrees per day. Negative means retrograde. */
+  wDot: number
+}
+
 export type Planet = {
   id: PlanetId
   name: string
   color: string
   rotation: RotationAxis
+  iau: IauFrame
   elements: KeplerianElements
 }
 
@@ -62,6 +89,14 @@ export const PLANETS: Planet[] = [
     name: 'Mercury',
     color: '#b0b4bc',
     rotation: { r: spinRate(58.6462), theta: 7.0369, phi: 318.2353 },
+    iau: {
+      ra0: 281.0103,
+      raDot: -0.0328,
+      dec0: 61.4155,
+      decDot: -0.0049,
+      w0: 329.5988,
+      wDot: 6.1385108,
+    },
     elements: {
       a0: 0.38709927,
       aDot: 0.00000037,
@@ -82,6 +117,14 @@ export const PLANETS: Planet[] = [
     name: 'Venus',
     color: '#e8c87a',
     rotation: { r: spinRate(243.0226), theta: 178.761, phi: 210.1867 },
+    iau: {
+      ra0: 272.76,
+      raDot: 0,
+      dec0: 67.16,
+      decDot: 0,
+      w0: 160.2,
+      wDot: -1.4813688,
+    },
     elements: {
       a0: 0.72333566,
       aDot: 0.0000039,
@@ -100,8 +143,16 @@ export const PLANETS: Planet[] = [
   {
     id: 'earth',
     name: 'Earth',
-    color: '#4b9cd3',
+    color: '#237523',
     rotation: { r: spinRate(0.99726968), theta: 23.4393, phi: 90 },
+    iau: {
+      ra0: 0,
+      raDot: -0.641,
+      dec0: 90,
+      decDot: -0.557,
+      w0: 190.147,
+      wDot: 360.9856235,
+    },
     elements: {
       a0: 1.00000261,
       aDot: 0.00000562,
@@ -122,6 +173,14 @@ export const PLANETS: Planet[] = [
     name: 'Mars',
     color: '#c1440e',
     rotation: { r: spinRate(1.02595676), theta: 25.4038, phi: 354.8436 },
+    iau: {
+      ra0: 317.269202,
+      raDot: -0.10927547,
+      dec0: 54.432516,
+      decDot: -0.05827105,
+      w0: 176.049863,
+      wDot: 350.891982443297,
+    },
     elements: {
       a0: 1.52371034,
       aDot: 0.00001847,
@@ -142,6 +201,15 @@ export const PLANETS: Planet[] = [
     name: 'Jupiter',
     color: '#d4a574',
     rotation: { r: spinRate(0.41354), theta: 2.2165, phi: 247.8177 },
+    // System III, the rotation of Jupiter's magnetic field.
+    iau: {
+      ra0: 268.056595,
+      raDot: -0.006499,
+      dec0: 64.495303,
+      decDot: 0.002413,
+      w0: 284.95,
+      wDot: 870.536,
+    },
     elements: {
       a0: 5.202887,
       aDot: -0.00011607,
@@ -162,6 +230,15 @@ export const PLANETS: Planet[] = [
     name: 'Saturn',
     color: '#e6d9a8',
     rotation: { r: spinRate(0.44401), theta: 28.0522, phi: 79.5275 },
+    // System III, the rotation of Saturn's magnetic field.
+    iau: {
+      ra0: 40.589,
+      raDot: -0.036,
+      dec0: 83.537,
+      decDot: -0.004,
+      w0: 38.9,
+      wDot: 810.7939024,
+    },
     elements: {
       a0: 9.53667594,
       aDot: -0.0012506,
@@ -182,6 +259,15 @@ export const PLANETS: Planet[] = [
     name: 'Uranus',
     color: '#7de3e0',
     rotation: { r: spinRate(0.71833), theta: 97.7218, phi: 77.6467 },
+    // System III, the rotation of Uranus's magnetic field.
+    iau: {
+      ra0: 257.311,
+      raDot: 0,
+      dec0: -15.175,
+      decDot: 0,
+      w0: 203.81,
+      wDot: -501.1600928,
+    },
     elements: {
       a0: 19.18916464,
       aDot: -0.00196176,
@@ -202,6 +288,17 @@ export const PLANETS: Planet[] = [
     name: 'Neptune',
     color: '#4166f5',
     rotation: { r: spinRate(0.67125), theta: 28.0264, phi: 319.2351 },
+    // System II, tracking optically observed cloud features. This spins faster
+    // than the magnetic System III period in `rotation` above: 15.97 h against
+    // 16.11 h. The clock follows the surface you could actually watch.
+    iau: {
+      ra0: 299.36,
+      raDot: 0,
+      dec0: 43.46,
+      decDot: 0,
+      w0: 249.978,
+      wDot: 541.1397757,
+    },
     elements: {
       a0: 30.06992276,
       aDot: 0.00026291,

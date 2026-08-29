@@ -1,9 +1,19 @@
-import { PLANETS, type Planet, type PlanetId, type RotationAxis } from '../data/planets.ts'
+import {
+  PLANETS,
+  type IauFrame,
+  type Planet,
+  type PlanetId,
+  type RotationAxis,
+} from '../data/planets.ts'
 
 const J2000 = 2451545.0
 const MS_PER_DAY = 86_400_000
 const UNIX_EPOCH_JD = 2440587.5
 const DEG = Math.PI / 180
+/** Obliquity of the ecliptic at J2000, degrees. */
+const OBLIQUITY_J2000 = 23.43928
+
+export type Vec3 = { x: number; y: number; z: number }
 
 export type PlanetState = {
   id: PlanetId
@@ -36,6 +46,20 @@ export type PlanetState = {
   retrograde: boolean
   /** Sidereal orbital period in days, from mean-motion rate L̇. */
   siderealOrbitDays: number
+  /** Heliocentric position in ecliptic-of-J2000 rectangular coordinates, AU. */
+  position: Vec3
+  /** Fraction of the orbit elapsed since perihelion, 0 to 1, advancing uniformly. */
+  yearFraction: number
+  /**
+   * Apparent local solar time at the prime meridian as a fraction of the mean
+   * solar day: 0 at local midnight, 0.5 at local noon. Always advances, even on
+   * the retrograde rotators where the Sun rises in the west.
+   */
+  dayFraction: number
+  /** Latitude of the subsolar point relative to the IAU north pole, radians. */
+  subsolarLatitude: number
+  /** Solar days in one orbit. Below 1 for Mercury, whose day outlasts its year. */
+  solsPerYear: number
 }
 
 export type SolarSystemSnapshot = {
@@ -67,6 +91,23 @@ function degToRad(deg: number): number {
   return deg * DEG
 }
 
+function dot(a: Vec3, b: Vec3): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  }
+}
+
+function normalize(v: Vec3): Vec3 {
+  const length = Math.hypot(v.x, v.y, v.z)
+  return { x: v.x / length, y: v.y / length, z: v.z / length }
+}
+
 function evaluate(planet: Planet, t: number) {
   const { elements: el } = planet
   return {
@@ -74,6 +115,8 @@ function evaluate(planet: Planet, t: number) {
     e: el.e0 + el.eDot * t,
     L: degToRad(el.L0 + el.LDot * t),
     varpi: degToRad(el.varpi0 + el.varpiDot * t),
+    i: degToRad(el.i0 + el.iDot * t),
+    Omega: degToRad(el.Omega0 + el.OmegaDot * t),
   }
 }
 
@@ -125,8 +168,115 @@ export function solarDayDays(
   return 1 / Math.abs(spinPerDay - orbitPerDay)
 }
 
+/**
+ * Heliocentric position in ecliptic-of-J2000 rectangular coordinates, AU.
+ * Orbital-plane coordinates rotated by argument of perihelion, inclination and
+ * longitude of ascending node, per the JPL approximate-positions recipe.
+ */
+export function heliocentricEcliptic(
+  a: number,
+  e: number,
+  E: number,
+  i: number,
+  Omega: number,
+  varpi: number,
+): Vec3 {
+  const xPlane = a * (Math.cos(E) - e)
+  const yPlane = a * Math.sqrt(1 - e * e) * Math.sin(E)
+  const omega = varpi - Omega
+  const cosW = Math.cos(omega)
+  const sinW = Math.sin(omega)
+  const cosO = Math.cos(Omega)
+  const sinO = Math.sin(Omega)
+  const cosI = Math.cos(i)
+  const sinI = Math.sin(i)
+  return {
+    x: (cosW * cosO - sinW * sinO * cosI) * xPlane + (-sinW * cosO - cosW * sinO * cosI) * yPlane,
+    y: (cosW * sinO + sinW * cosO * cosI) * xPlane + (-sinW * sinO + cosW * cosO * cosI) * yPlane,
+    z: sinW * sinI * xPlane + cosW * sinI * yPlane,
+  }
+}
+
+/** Ecliptic-of-J2000 to ICRF equatorial coordinates. */
+export function eclipticToEquatorial(v: Vec3): Vec3 {
+  const eps = degToRad(OBLIQUITY_J2000)
+  const cosE = Math.cos(eps)
+  const sinE = Math.sin(eps)
+  return {
+    x: v.x,
+    y: v.y * cosE - v.z * sinE,
+    z: v.y * sinE + v.z * cosE,
+  }
+}
+
+/** ICRF equatorial to ecliptic-of-J2000 coordinates. */
+export function equatorialToEcliptic(v: Vec3): Vec3 {
+  const eps = degToRad(OBLIQUITY_J2000)
+  const cosE = Math.cos(eps)
+  const sinE = Math.sin(eps)
+  return {
+    x: v.x,
+    y: v.y * cosE + v.z * sinE,
+    z: -v.y * sinE + v.z * cosE,
+  }
+}
+
+/**
+ * Body-fixed axes in ICRF equatorial coordinates. The node is the ascending
+ * node of the body equator on the ICRF equator, at right ascension α₀ + 90°,
+ * and W is measured easterly from there to the prime meridian.
+ */
+export function bodyFrame(
+  iau: IauFrame,
+  days: number,
+): { pole: Vec3; node: Vec3; primeMeridian: Vec3 } {
+  const t = days / 36525
+  const ra = degToRad(iau.ra0 + iau.raDot * t)
+  const dec = degToRad(iau.dec0 + iau.decDot * t)
+  const pole = {
+    x: Math.cos(dec) * Math.cos(ra),
+    y: Math.cos(dec) * Math.sin(ra),
+    z: Math.sin(dec),
+  }
+  // ẑ × pole, which stays well defined for Earth's near-polar pole because the
+  // components shrink together and normalising recovers the direction.
+  const node = normalize({ x: -pole.y, y: pole.x, z: 0 })
+  const east = cross(pole, node)
+  const w = degToRad(iau.w0 + iau.wDot * days)
+  const primeMeridian = {
+    x: node.x * Math.cos(w) + east.x * Math.sin(w),
+    y: node.y * Math.cos(w) + east.y * Math.sin(w),
+    z: node.z * Math.cos(w) + east.z * Math.sin(w),
+  }
+  return { pole, node, primeMeridian }
+}
+
+/**
+ * Apparent local solar time at the prime meridian and the subsolar latitude,
+ * from the direction of the Sun in the body-fixed frame. The hour angle runs
+ * backwards for retrograde rotators, so its sign is folded in to keep the time
+ * of day advancing everywhere.
+ */
+export function localSolarTime(
+  iau: IauFrame,
+  positionEcliptic: Vec3,
+  days: number,
+  orbitDegPerDay: number,
+): { dayFraction: number; subsolarLatitude: number } {
+  const { pole, primeMeridian } = bodyFrame(iau, days)
+  const planet = eclipticToEquatorial(positionEcliptic)
+  const sun = normalize({ x: -planet.x, y: -planet.y, z: -planet.z })
+  const east = cross(pole, primeMeridian)
+  const hourAngle = Math.atan2(dot(sun, east), dot(sun, primeMeridian))
+  const sense = Math.sign(iau.wDot - orbitDegPerDay)
+  return {
+    dayFraction: wrapRad(Math.PI - sense * hourAngle) / (Math.PI * 2),
+    subsolarLatitude: Math.asin(dot(sun, pole)),
+  }
+}
+
 function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState {
-  const { a, e, L, varpi } = evaluate(planet, t)
+  const { a, e, L, varpi, i, Omega } = evaluate(planet, t)
   const meanAnomaly = wrapRadSigned(L - varpi)
   const E = eccentricAnomaly(meanAnomaly, e)
   const nu = trueAnomalyFromE(E, e)
@@ -134,6 +284,14 @@ function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState
   const siderealRotationDays = (2 * Math.PI) / planet.rotation.r
   const retrograde = planet.rotation.theta > 90
   const siderealOrbitDays = (360 * 36525) / planet.elements.LDot
+  const position = heliocentricEcliptic(a, e, E, i, Omega, varpi)
+  const { dayFraction, subsolarLatitude } = localSolarTime(
+    planet.iau,
+    position,
+    t * 36525,
+    360 / siderealOrbitDays,
+  )
+  const solarDay = solarDayDays(siderealRotationDays, siderealOrbitDays, retrograde)
   return {
     id: planet.id,
     name: planet.name,
@@ -147,10 +305,15 @@ function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState
     offsetFromEarthPerihelion: wrapRad(longitude - earthVarpi),
     rotation: planet.rotation,
     siderealRotationDays,
-    solarDayDays: solarDayDays(siderealRotationDays, siderealOrbitDays, retrograde),
+    solarDayDays: solarDay,
     obliquity: degToRad(planet.rotation.theta),
     retrograde,
     siderealOrbitDays,
+    position,
+    yearFraction: wrapRad(meanAnomaly) / (Math.PI * 2),
+    dayFraction,
+    subsolarLatitude,
+    solsPerYear: siderealOrbitDays / solarDay,
   }
 }
 
