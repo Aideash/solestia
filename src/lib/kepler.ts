@@ -26,6 +26,11 @@ export type PlanetState = {
   rotation: RotationAxis
   /** Sidereal rotation period in days, always positive. */
   siderealRotationDays: number
+  /**
+   * Mean solar day in Earth days: time for the Sun to return to the same
+   * meridian, from |ω_spin − n|. Retrograde spin shortens the solar day.
+   */
+  solarDayDays: number
   /** Spin axis tilt from ecliptic north, radians. Over π/2 means retrograde. */
   obliquity: number
   retrograde: boolean
@@ -106,12 +111,29 @@ export function orbitPoint(
   }
 }
 
+/**
+ * Mean solar day from sidereal spin and mean motion. ω_spin is signed
+ * (negative if retrograde) so the Sun’s apparent rate is |ω_spin − n|.
+ */
+export function solarDayDays(
+  siderealRotationDays: number,
+  siderealOrbitDays: number,
+  retrograde: boolean,
+): number {
+  const spinPerDay = (retrograde ? -1 : 1) / siderealRotationDays
+  const orbitPerDay = 1 / siderealOrbitDays
+  return 1 / Math.abs(spinPerDay - orbitPerDay)
+}
+
 function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState {
   const { a, e, L, varpi } = evaluate(planet, t)
   const meanAnomaly = wrapRadSigned(L - varpi)
   const E = eccentricAnomaly(meanAnomaly, e)
   const nu = trueAnomalyFromE(E, e)
   const longitude = wrapRad(varpi + nu)
+  const siderealRotationDays = (2 * Math.PI) / planet.rotation.r
+  const retrograde = planet.rotation.theta > 90
+  const siderealOrbitDays = (360 * 36525) / planet.elements.LDot
   return {
     id: planet.id,
     name: planet.name,
@@ -124,10 +146,11 @@ function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState
     longitude,
     offsetFromEarthPerihelion: wrapRad(longitude - earthVarpi),
     rotation: planet.rotation,
-    siderealRotationDays: (2 * Math.PI) / planet.rotation.r,
+    siderealRotationDays,
+    solarDayDays: solarDayDays(siderealRotationDays, siderealOrbitDays, retrograde),
     obliquity: degToRad(planet.rotation.theta),
-    retrograde: planet.rotation.theta > 90,
-    siderealOrbitDays: (360 * 36525) / planet.elements.LDot,
+    retrograde,
+    siderealOrbitDays,
   }
 }
 

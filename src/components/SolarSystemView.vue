@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { orbitPoint, wrapRad, type SolarSystemSnapshot } from '../lib/kepler.ts'
 
 const props = defineProps<{
@@ -29,6 +29,12 @@ function formatRad(rad: number): string {
 const JULIAN_YEAR_DAYS = 365.25
 const HOURS_PER_DAY = 24
 
+type RotationKind = 'sidereal' | 'solar'
+type OrbitUnit = 'earth' | 'local'
+
+const rotationKind = ref<RotationKind>('sidereal')
+const orbitUnit = ref<OrbitUnit>('earth')
+
 /** Roughly four significant figures, so column widths stay comparable. */
 function formatQuantity(value: number, unit: string): string {
   const digits = value >= 10000 ? 0 : value >= 100 ? 1 : value >= 10 ? 2 : 3
@@ -37,6 +43,14 @@ function formatQuantity(value: number, unit: string): string {
     maximumFractionDigits: digits,
   })
   return `${number} ${unit}`
+}
+
+function toggleRotationKind() {
+  rotationKind.value = rotationKind.value === 'sidereal' ? 'solar' : 'sidereal'
+}
+
+function toggleOrbitUnit() {
+  orbitUnit.value = orbitUnit.value === 'earth' ? 'local' : 'earth'
 }
 
 const rings = computed(() => {
@@ -53,20 +67,32 @@ const rings = computed(() => {
 })
 
 const rows = computed(() =>
-  props.snapshot.planets.map((planet) => ({
-    planet,
-    rotation: {
-      primary: formatQuantity(planet.siderealRotationDays * HOURS_PER_DAY, 'h'),
-      secondary: formatQuantity(planet.siderealRotationDays, 'd'),
-      spin: `Spin axis tilted ${formatDeg(planet.obliquity)} from ecliptic north${
-        planet.retrograde ? ' — rotates retrograde' : ''
-      }`,
-    },
-    orbit: {
-      primary: formatQuantity(planet.siderealOrbitDays, 'd'),
-      secondary: formatQuantity(planet.siderealOrbitDays / JULIAN_YEAR_DAYS, 'yr'),
-    },
-  })),
+  props.snapshot.planets.map((planet) => {
+    const rotationDays =
+      rotationKind.value === 'sidereal' ? planet.siderealRotationDays : planet.solarDayDays
+    const localOrbitDays = planet.siderealOrbitDays / rotationDays
+    const localUnit = rotationKind.value === 'sidereal' ? 'sid. d' : 'sol. d'
+    return {
+      planet,
+      rotation: {
+        primary: formatQuantity(rotationDays * HOURS_PER_DAY, 'h'),
+        secondary: formatQuantity(rotationDays, 'd'),
+        spin: `Spin axis tilted ${formatDeg(planet.obliquity)} from ecliptic north${
+          planet.retrograde ? ' — rotates retrograde' : ''
+        }`,
+      },
+      orbit:
+        orbitUnit.value === 'earth'
+          ? {
+              primary: formatQuantity(planet.siderealOrbitDays, 'd'),
+              secondary: formatQuantity(planet.siderealOrbitDays / JULIAN_YEAR_DAYS, 'yr'),
+            }
+          : {
+              primary: formatQuantity(localOrbitDays, localUnit),
+              secondary: '',
+            },
+    }
+  }),
 )
 </script>
 
@@ -136,12 +162,14 @@ const rows = computed(() =>
               and its perihelion.
             </p>
             <p>
-              <strong>P<sub>rot</sub></strong> is the sidereal rotation period — one spin relative
-              to the stars. Hover a value for that planet’s axial tilt.
+              <strong>P<sub>rot</sub></strong> is the rotation period. Click the heading to switch
+              between a sidereal day (one spin relative to the stars) and a solar day (noon to
+              noon). Hover a value for that planet’s axial tilt.
             </p>
             <p>
               <strong>P<sub>orb</sub></strong> is the sidereal orbital period — one revolution
-              around the Sun relative to the stars.
+              around the Sun relative to the stars. Click the heading to express it in Earth days
+              and years, or in that planet’s own days (sidereal or solar, matching P<sub>rot</sub>).
             </p>
           </div>
         </span>
@@ -152,10 +180,34 @@ const rows = computed(() =>
           <th scope="col">λ</th>
           <th scope="col">ν</th>
           <th scope="col">
-            <span class="th-sym">P<sub>rot</sub></span>
+            <button
+              type="button"
+              class="th-toggle"
+              :aria-label="
+                rotationKind === 'sidereal'
+                  ? 'Rotation period, sidereal. Click to show solar day.'
+                  : 'Rotation period, solar. Click to show sidereal day.'
+              "
+              @click="toggleRotationKind"
+            >
+              <span class="th-sym">P<sub>rot</sub></span>
+              <span class="th-mode">{{ rotationKind }}</span>
+            </button>
           </th>
           <th scope="col">
-            <span class="th-sym">P<sub>orb</sub></span>
+            <button
+              type="button"
+              class="th-toggle"
+              :aria-label="
+                orbitUnit === 'earth'
+                  ? 'Orbital period in Earth days and years. Click to show the planet’s own days.'
+                  : 'Orbital period in the planet’s own days. Click to show Earth days and years.'
+              "
+              @click="toggleOrbitUnit"
+            >
+              <span class="th-sym">P<sub>orb</sub></span>
+              <span class="th-mode">{{ orbitUnit === 'earth' ? 'Earth d' : 'own days' }}</span>
+            </button>
           </th>
         </tr>
       </thead>
@@ -179,7 +231,7 @@ const rows = computed(() =>
           </td>
           <td>
             <span class="pair">{{ row.orbit.primary }}</span>
-            <span class="pair pair--dim">{{ row.orbit.secondary }}</span>
+            <span v-if="row.orbit.secondary" class="pair pair--dim">{{ row.orbit.secondary }}</span>
           </td>
         </tr>
       </tbody>
@@ -310,6 +362,35 @@ const rows = computed(() =>
 .help:hover .help__panel,
 .help:focus-within .help__panel {
   display: block;
+}
+
+.th-toggle {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.th-toggle:hover .th-mode,
+.th-toggle:focus-visible {
+  color: var(--text);
+}
+
+.th-toggle:focus-visible {
+  outline: none;
+}
+
+.th-mode {
+  font-size: 0.65rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
 
 .th-sym sub {

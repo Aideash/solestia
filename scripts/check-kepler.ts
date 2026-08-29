@@ -42,6 +42,24 @@ assert(
   `Earth sidereal rotation should be just under 1 d, got ${earthPeri.siderealRotationDays}`,
 )
 assert(
+  Math.abs(earthPeri.solarDayDays - 1) < 0.0002,
+  `Earth solar day should be ~1 d, got ${earthPeri.solarDayDays}`,
+)
+
+const mercury = perihelion.planets.find((p) => p.id === 'mercury')
+assert(mercury, 'Mercury missing from snapshot')
+assert(
+  Math.abs(mercury.solarDayDays - 175.94) < 0.05,
+  `Mercury solar day should be ~176 d, got ${mercury.solarDayDays}`,
+)
+
+const venus = perihelion.planets.find((p) => p.id === 'venus')
+assert(venus, 'Venus missing from snapshot')
+assert(
+  Math.abs(venus.solarDayDays - 116.75) < 0.05,
+  `Venus solar day should be ~116.75 d, got ${venus.solarDayDays}`,
+)
+assert(
   Math.abs(deg(earthPeri.obliquity) - 23.44) < 0.01,
   `Earth obliquity should be ~23.44°, got ${deg(earthPeri.obliquity).toFixed(2)}°`,
 )
