@@ -3,6 +3,13 @@
  * Source: JPL SSD Approximate Positions of the Planets, Table 1
  * (valid 1800–2050). Angles in degrees; rates per Julian century (T).
  * https://ssd.jpl.nasa.gov/planets/approx_pos.html
+ *
+ * Sidereal rotation periods: NASA Planetary Fact Sheet
+ * https://nssdc.gsfc.nasa.gov/planetary/factsheet/
+ * Spin axis directions: IAU WGCCRE 2015 pole right ascension/declination,
+ * rotated into ecliptic-of-J2000 coordinates. Poles for retrograde rotators
+ * (Venus, Uranus) are flipped so the stored vector is the angular velocity
+ * itself, i.e. right-handed about the direction of spin.
  */
 
 export type PlanetId =
@@ -23,11 +30,30 @@ export type KeplerianElements = {
   OmegaDot: number
 }
 
+/**
+ * Angular velocity ω in ecliptic-of-J2000 spherical coordinates. The direction
+ * carries the sense of spin, so the magnitude is always positive.
+ */
+export type RotationAxis = {
+  /** |ω| in radians per day. */
+  r: number
+  /** Polar angle from ecliptic north, degrees. Over 90° means retrograde. */
+  theta: number
+  /** Azimuth from the J2000 vernal equinox, degrees. */
+  phi: number
+}
+
 export type Planet = {
   id: PlanetId
   name: string
   color: string
+  rotation: RotationAxis
   elements: KeplerianElements
+}
+
+/** Sidereal rotation period in days to |ω| in radians per day. */
+function spinRate(siderealRotationDays: number): number {
+  return (2 * Math.PI) / siderealRotationDays
 }
 
 export const PLANETS: Planet[] = [
@@ -35,6 +61,7 @@ export const PLANETS: Planet[] = [
     id: 'mercury',
     name: 'Mercury',
     color: '#b0b4bc',
+    rotation: { r: spinRate(58.6462), theta: 7.0369, phi: 318.2353 },
     elements: {
       a0: 0.38709927,
       aDot: 0.00000037,
@@ -54,6 +81,7 @@ export const PLANETS: Planet[] = [
     id: 'venus',
     name: 'Venus',
     color: '#e8c87a',
+    rotation: { r: spinRate(243.0226), theta: 178.761, phi: 210.1867 },
     elements: {
       a0: 0.72333566,
       aDot: 0.0000039,
@@ -73,6 +101,7 @@ export const PLANETS: Planet[] = [
     id: 'earth',
     name: 'Earth',
     color: '#4b9cd3',
+    rotation: { r: spinRate(0.99726968), theta: 23.4393, phi: 90 },
     elements: {
       a0: 1.00000261,
       aDot: 0.00000562,
@@ -92,6 +121,7 @@ export const PLANETS: Planet[] = [
     id: 'mars',
     name: 'Mars',
     color: '#c1440e',
+    rotation: { r: spinRate(1.02595676), theta: 25.4038, phi: 354.8436 },
     elements: {
       a0: 1.52371034,
       aDot: 0.00001847,
@@ -111,6 +141,7 @@ export const PLANETS: Planet[] = [
     id: 'jupiter',
     name: 'Jupiter',
     color: '#d4a574',
+    rotation: { r: spinRate(0.41354), theta: 2.2165, phi: 247.8177 },
     elements: {
       a0: 5.202887,
       aDot: -0.00011607,
@@ -130,6 +161,7 @@ export const PLANETS: Planet[] = [
     id: 'saturn',
     name: 'Saturn',
     color: '#e6d9a8',
+    rotation: { r: spinRate(0.44401), theta: 28.0522, phi: 79.5275 },
     elements: {
       a0: 9.53667594,
       aDot: -0.0012506,
@@ -149,6 +181,7 @@ export const PLANETS: Planet[] = [
     id: 'uranus',
     name: 'Uranus',
     color: '#7de3e0',
+    rotation: { r: spinRate(0.71833), theta: 97.7218, phi: 77.6467 },
     elements: {
       a0: 19.18916464,
       aDot: -0.00196176,
@@ -168,6 +201,7 @@ export const PLANETS: Planet[] = [
     id: 'neptune',
     name: 'Neptune',
     color: '#4166f5',
+    rotation: { r: spinRate(0.67125), theta: 28.0264, phi: 319.2351 },
     elements: {
       a0: 30.06992276,
       aDot: 0.00026291,

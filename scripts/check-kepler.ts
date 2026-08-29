@@ -33,6 +33,32 @@ assert(
 
 assert(perihelion.planets.length === 8, `expected 8 planets, got ${perihelion.planets.length}`)
 
+assert(
+  Math.abs(earthPeri.siderealOrbitDays - 365.256) < 0.02,
+  `Earth sidereal orbit should be ~365.256 d, got ${earthPeri.siderealOrbitDays}`,
+)
+assert(
+  earthPeri.siderealRotationDays > 0.99 && earthPeri.siderealRotationDays < 1,
+  `Earth sidereal rotation should be just under 1 d, got ${earthPeri.siderealRotationDays}`,
+)
+assert(
+  Math.abs(deg(earthPeri.obliquity) - 23.44) < 0.01,
+  `Earth obliquity should be ~23.44°, got ${deg(earthPeri.obliquity).toFixed(2)}°`,
+)
+
+for (const planet of perihelion.planets) {
+  assert(
+    planet.siderealRotationDays > 0,
+    `${planet.name} rotation period should be positive, got ${planet.siderealRotationDays}`,
+  )
+}
+
+const retrograde = perihelion.planets.filter((p) => p.retrograde).map((p) => p.id)
+assert(
+  retrograde.join(',') === 'venus,uranus',
+  `expected Venus and Uranus to be retrograde, got ${retrograde.join(',') || 'none'}`,
+)
+
 console.log(
   `ok  Earth ν ${deg(earthPeri.trueAnomaly).toFixed(1)}° on 2026-01-03, ${deg(earthAph.trueAnomaly).toFixed(1)}° on 2026-07-04`,
 )

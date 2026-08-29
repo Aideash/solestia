@@ -20,8 +20,12 @@ const snapshot = computed(() => solarSystemAt(now.value))
 
 const clockLabel = computed(() =>
   now.value.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     timeZoneName: 'short',
   }),
 )
@@ -41,7 +45,7 @@ const clockLabel = computed(() =>
 @use './styles/variables' as *;
 
 .app {
-  max-width: 24rem;
+  max-width: 32rem;
   margin: 0 auto;
   padding: $spacing-lg $spacing-md 2.5rem;
   min-height: 100vh;

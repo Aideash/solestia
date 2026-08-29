@@ -1,4 +1,4 @@
-import { PLANETS, type Planet, type PlanetId } from '../data/planets.ts'
+import { PLANETS, type Planet, type PlanetId, type RotationAxis } from '../data/planets.ts'
 
 const J2000 = 2451545.0
 const MS_PER_DAY = 86_400_000
@@ -22,6 +22,15 @@ export type PlanetState = {
   longitude: number
   /** λ minus Earth's perihelion longitude; 0 at Earth's perihelion direction. */
   offsetFromEarthPerihelion: number
+  /** Angular velocity vector, ecliptic-of-J2000 spherical coordinates. */
+  rotation: RotationAxis
+  /** Sidereal rotation period in days, always positive. */
+  siderealRotationDays: number
+  /** Spin axis tilt from ecliptic north, radians. Over π/2 means retrograde. */
+  obliquity: number
+  retrograde: boolean
+  /** Sidereal orbital period in days, from mean-motion rate L̇. */
+  siderealOrbitDays: number
 }
 
 export type SolarSystemSnapshot = {
@@ -114,6 +123,11 @@ function planetState(planet: Planet, t: number, earthVarpi: number): PlanetState
     perihelionLongitude: wrapRad(varpi),
     longitude,
     offsetFromEarthPerihelion: wrapRad(longitude - earthVarpi),
+    rotation: planet.rotation,
+    siderealRotationDays: (2 * Math.PI) / planet.rotation.r,
+    obliquity: degToRad(planet.rotation.theta),
+    retrograde: planet.rotation.theta > 90,
+    siderealOrbitDays: (360 * 36525) / planet.elements.LDot,
   }
 }
 
