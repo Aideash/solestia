@@ -108,7 +108,7 @@ export type Planet = BodyFrames & {
 }
 
 /** |ω| in rad/day from an IAU prime-meridian rate in deg/day. */
-function omegaFromWDot(wDot: number): number {
+export function omegaFromWDot(wDot: number): number {
   return (2 * Math.PI * Math.abs(wDot)) / 360
 }
 

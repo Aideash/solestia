@@ -5,10 +5,13 @@ import {
   SUN,
   frameFor,
 } from '../src/data/planets.ts'
+import { MOONS } from '../src/data/moons.ts'
 import {
   bodyFrame,
   clampEpoch,
+  eccentricityWobble,
   equatorialToEcliptic,
+  jupiterSystemAt,
   solarSystemAt,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
@@ -336,4 +339,97 @@ assert(
 console.log('ok  epoch clamp is local 1800-01-01 … 2050-12-31')
 console.log(
   `ok  Earth local solar time ${(earthPeri.dayFraction * 24).toFixed(2)} h at 12:00 UT, subsolar latitude ${deg(junSolstice.subsolarLatitude).toFixed(2)}° at the June solstice`,
+)
+
+const j2000 = jupiterSystemAt(new Date('2000-01-01T12:00:00Z'))
+assert(j2000.moons.length === 4, `expected 4 Galilean moons, got ${j2000.moons.length}`)
+const io = j2000.moons.find((m) => m.id === 'io')
+assert(io, 'Io missing from Jupiter system')
+assert(io.aKm === 421800, `Io a should be 421800 km, got ${io.aKm}`)
+assert(
+  Math.abs(deg(io.meanAnomaly) - 330.9) < 0.2,
+  `Io mean anomaly at J2000 should be ~330.9°, got ${deg(io.meanAnomaly).toFixed(2)}°`,
+)
+
+for (const moon of j2000.moons) {
+  assert(
+    Number.isFinite(moon.solarDayDays) && moon.solarDayDays < moon.siderealOrbitDays * 1.02,
+    `${moon.name} solar day should be finite and close to its month, got ${moon.solarDayDays} vs orbit ${moon.siderealOrbitDays}`,
+  )
+  assert(
+    Math.abs(moon.solarDayDays - moon.siderealOrbitDays) / moon.siderealOrbitDays < 0.02,
+    `${moon.name} solar day ${moon.solarDayDays} should be within 2% of sidereal month ${moon.siderealOrbitDays}`,
+  )
+  const inward = deg(wrapRadSigned(moon.facing.longitude - moon.longitude - Math.PI))
+  assert(
+    Math.abs(inward) < 25,
+    `${moon.name} prime meridian should face Jupiter (inward), off by ${inward.toFixed(1)}°`,
+  )
+  assert(
+    Math.abs(moon.siderealOrbitDays / moon.siderealRotationDays - 1) < 1e-4,
+    `${moon.name} should be synchronous, spin–orbit ratio ${moon.siderealOrbitDays / moon.siderealRotationDays}`,
+  )
+  assert(
+    moon.jupiterDayDays === Number.POSITIVE_INFINITY,
+    `${moon.name} is locked, so its Jupiter day should be infinite, got ${moon.jupiterDayDays}`,
+  )
+}
+
+/** Folding the precession into the tabulated M period should give these. */
+const SIDEREAL_MONTHS: Record<string, number> = {
+  io: 1.769138,
+  europa: 3.551181,
+  ganymede: 7.154553,
+  callisto: 16.689018,
+}
+
+for (const moon of j2000.moons) {
+  const expected = SIDEREAL_MONTHS[moon.id]
+  assert(
+    Math.abs(moon.siderealOrbitDays - expected) < 1e-3,
+    `${moon.name} sidereal month should be ~${expected} d, got ${moon.siderealOrbitDays.toFixed(6)}`,
+  )
+}
+
+// The lock has to hold over decades, not just at the epoch: a precession term
+// with the wrong sign leaves the epoch untouched and walks the sub-Jupiter point
+// right around the moon within a year.
+const late = jupiterSystemAt(new Date('2049-01-01T12:00:00Z'))
+for (const moon of late.moons) {
+  const inward = deg(wrapRadSigned(moon.facing.longitude - moon.longitude - Math.PI))
+  assert(
+    Math.abs(inward) < 6,
+    `${moon.name} prime meridian should still face Jupiter in 2049, off by ${inward.toFixed(1)}°`,
+  )
+}
+
+// First order the wobble is 2e; Earth's is the 7.7 min eccentricity term of the
+// equation of time.
+assert(eccentricityWobble(0) === 0, 'a circular orbit should have no wobble')
+const earthWobble = deg(eccentricityWobble(earthPeri.e))
+assert(
+  Math.abs(earthWobble - 1.915) < 0.01,
+  `Earth eccentricity wobble should be ~1.915°, got ${earthWobble.toFixed(3)}°`,
+)
+
+for (const moon of MOONS) {
+  const pole = equatorialToEcliptic(bodyFrame(moon.iau, 0).pole)
+  const theta = deg(Math.acos(pole.z))
+  const phi = (deg(Math.atan2(pole.y, pole.x)) + 360) % 360
+  assert(
+    Math.abs(theta - moon.rotation.theta) < 0.002,
+    `${moon.name} IAU pole tilt ${theta.toFixed(4)}° should match stored ${moon.rotation.theta}°`,
+  )
+  const phiGap = Math.abs((((phi - moon.rotation.phi + 540) % 360) - 180) % 360)
+  assert(
+    phiGap < 0.002,
+    `${moon.name} IAU pole azimuth ${phi.toFixed(4)}° should match stored ${moon.rotation.phi}°`,
+  )
+}
+
+console.log(
+  `ok  Galilean moons at J2000: Io ν ${deg(io.trueAnomaly).toFixed(1)}°, sidereal month ${io.siderealOrbitDays.toFixed(6)} d, solar day ${io.solarDayDays.toFixed(4)} d, Jupiter day ${io.jupiterDayDays}`,
+)
+console.log(
+  `ok  eccentricity wobble: Io libration ±${deg(eccentricityWobble(io.e)).toFixed(3)}°, Earth equation of time ±${earthWobble.toFixed(3)}°`,
 )

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { PlanetState } from '../lib/kepler.ts'
+import type { MoonState, PlanetState } from '../lib/kepler.ts'
 
 const props = defineProps<{
-  planet: PlanetState
+  planet: PlanetState | MoonState
   mirroredLabel?: boolean
   selected?: boolean
 }>()
 
 const emit = defineEmits<{ select: [] }>()
+
+const isMoon = computed(() => 'jupiterFraction' in props.planet)
 
 const cx = 50
 const cy = 50
@@ -53,6 +55,10 @@ const dayTicks = tickMarks(DAY_DIVISIONS, faceRadius - 3, faceRadius, 6)
 const yearOffset = computed(() => rimCircumference * (1 - props.planet.yearFraction))
 const yearHead = computed(() => dialPoint(rimRadius, props.planet.yearFraction))
 const dayHand = computed(() => dialPoint(handRadius, props.planet.dayFraction))
+const jupiterMark = computed(() => {
+  if (!('jupiterFraction' in props.planet)) return null
+  return dialPoint(handRadius * 0.72, props.planet.jupiterFraction)
+})
 
 /** Pie slice from local midnight at the top, sweeping clockwise. */
 const daySector = computed(() => {
@@ -83,9 +89,8 @@ function localTime(fraction: number): string {
 
 const label = computed(() => {
   const planet = props.planet
-  const parts = [
-    `${planet.name} — ${percent(planet.yearFraction)} through its year since perihelion`,
-  ]
+  const orbitWord = isMoon.value ? 'month since perijove' : 'year since perihelion'
+  const parts = [`${planet.name} — ${percent(planet.yearFraction)} through its ${orbitWord}`]
   if (planet.solsPerYear >= 2) {
     const total = Math.round(planet.solsPerYear)
     const day = Math.min(Math.floor(planet.yearFraction * planet.solsPerYear) + 1, total)
@@ -96,6 +101,10 @@ const label = computed(() => {
     `local solar time ${localTime(planet.dayFraction)}`,
     `Sun overhead at ${Math.abs(latitude).toFixed(1)}° ${latitude >= 0 ? 'north' : 'south'}`,
   )
+  if ('jupiterFraction' in planet) {
+    const hour = localTime(planet.jupiterFraction)
+    parts.push(`Jupiter transits the prime meridian near ${hour} (1:1 lock, with libration)`)
+  }
   return parts.join(' · ')
 })
 </script>
@@ -161,6 +170,16 @@ const label = computed(() => {
     <path v-if="daySector" class="clock__day-sector" :d="daySector" />
     <line class="clock__midnight" :x1="cx" :y1="cy" :x2="cx" :y2="cy - sectorRadius" />
     <line class="clock__day-hand" :x1="cx" :y1="cy" :x2="dayHand.x" :y2="dayHand.y" />
+    <text
+      v-if="jupiterMark"
+      class="clock__parent"
+      :x="jupiterMark.x"
+      :y="jupiterMark.y"
+      text-anchor="middle"
+      dominant-baseline="middle"
+    >
+      ♃
+    </text>
     <circle class="clock__hub" :cx="cx" :cy="cy" r="2.2" />
   </svg>
 </template>
@@ -175,6 +194,18 @@ const label = computed(() => {
   width: 100%;
   height: auto;
   cursor: pointer;
+}
+
+.clock:hover {
+  filter: drop-shadow(0px 0px 4px var(--accent));
+}
+
+.clock.selected {
+  filter: drop-shadow(0px 0px 7px var(--accent));
+}
+
+.clock.selected:hover {
+  filter: drop-shadow(0px 0px 7px color-mix(in srgb, var(--accent), var(--text)));
 }
 
 /*
@@ -255,5 +286,15 @@ const label = computed(() => {
 
 .clock__hub {
   fill: var(--dial-accent);
+}
+
+.clock__symbol {
+  font-size: 0.9em;
+}
+
+.clock__parent {
+  font-size: 7px;
+  fill: var(--text-dim);
+  pointer-events: none;
 }
 </style>
