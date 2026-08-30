@@ -1248,12 +1248,22 @@ td {
   min-width: 4.5rem;
 }
 
+tbody tr:last-child {
+  th,
+  td {
+    border-bottom-color: transparent;
+  }
+}
+
+$sticky-fade: 0.4rem 0 0.55rem -0.35rem var(--bg);
+
 .readout__planet {
   position: sticky;
   left: 0;
   z-index: 1;
-  background: var(--bg);
-  box-shadow: 0.4rem 0 0.55rem -0.35rem var(--bg);
+  padding-right: 20px;
+  background: linear-gradient(to right, var(--bg) 85%, transparent 100%);
+  box-shadow: $sticky-fade;
 }
 
 thead .readout__planet {
@@ -1271,8 +1281,41 @@ tbody th {
   white-space: nowrap;
 }
 
+/* The sticky planet cell paints its own background, so a glow drawn on the row
+   is buried under that first column. Build the row glow out of per-cell shadows
+   instead: every cell lights its top and bottom edge, and the end cells add the
+   row's left and right edges. Safari also needs this — it does not treat a
+   relatively positioned `tr` as the containing block for an overlay. */
+@mixin row-glow($color, $reach: 0.9rem, $blur: 1rem) {
+  > * {
+    box-shadow:
+      inset 0 $reach $blur (-$reach) $color,
+      inset 0 (-$reach) $blur (-$reach) $color;
+  }
+
+  > .readout__planet {
+    box-shadow:
+      $sticky-fade,
+      inset 0 $reach $blur (-$reach) $color,
+      inset 0 (-$reach) $blur (-$reach) $color,
+      inset $reach 0 $blur (-$reach) $color;
+  }
+
+  > *:last-child:not(.readout__planet) {
+    box-shadow:
+      inset 0 $reach $blur (-$reach) $color,
+      inset 0 (-$reach) $blur (-$reach) $color,
+      inset (-$reach) 0 $blur (-$reach) $color;
+  }
+}
+
 tbody tr {
   cursor: pointer;
+
+  th,
+  td {
+    transition: box-shadow 120ms ease;
+  }
 
   &:focus {
     outline: none;
@@ -1284,17 +1327,15 @@ tbody tr {
   }
 
   &:hover {
-    box-shadow: 0px 0px 20px 0px var(--border) inset;
+    @include row-glow(var(--border));
   }
 
   &.selected {
-    box-shadow: 0px 0px 25px 0px var(--border-strong) inset;
+    @include row-glow(var(--border-strong));
   }
 
   &.selected:hover {
-    box-shadow:
-      0px 0px 15px -3px var(--border-strong),
-      0px 0px 30px 0px var(--border-strong) inset;
+    @include row-glow(var(--border-strong), 1.15rem, 1.25rem);
   }
 }
 
