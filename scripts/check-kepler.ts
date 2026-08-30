@@ -1,5 +1,16 @@
-import { PLANETS, frameFor } from '../src/data/planets.ts'
-import { bodyFrame, equatorialToEcliptic, solarSystemAt, wrapRadSigned } from '../src/lib/kepler.ts'
+import {
+  ELEMENTS_VALID_FROM_MS,
+  ELEMENTS_VALID_TO_MS,
+  PLANETS,
+  frameFor,
+} from '../src/data/planets.ts'
+import {
+  bodyFrame,
+  clampEpoch,
+  equatorialToEcliptic,
+  solarSystemAt,
+  wrapRadSigned,
+} from '../src/lib/kepler.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -257,6 +268,22 @@ for (const planet of PLANETS) {
 console.log(
   `ok  Earth ν ${deg(earthPeri.trueAnomaly).toFixed(1)}° on 2026-01-03, ${deg(earthAph.trueAnomaly).toFixed(1)}° on 2026-07-04`,
 )
+const clampedEarly = clampEpoch(new Date(1799, 11, 31))
+assert(
+  clampedEarly.getTime() === ELEMENTS_VALID_FROM_MS,
+  `dates before 1800 should clamp to ${new Date(ELEMENTS_VALID_FROM_MS).toISOString()}, got ${clampedEarly.toISOString()}`,
+)
+const clampedLate = clampEpoch(new Date(2051, 0, 1))
+assert(
+  clampedLate.getTime() === ELEMENTS_VALID_TO_MS,
+  `dates after 2050 should clamp to ${new Date(ELEMENTS_VALID_TO_MS).toISOString()}, got ${clampedLate.toISOString()}`,
+)
+const inside = new Date('2026-01-03T12:00:00Z')
+assert(
+  clampEpoch(inside) === inside,
+  'dates inside the validity window should be returned unchanged',
+)
+console.log('ok  epoch clamp is local 1800-01-01 … 2050-12-31')
 console.log(
   `ok  Earth local solar time ${(earthPeri.dayFraction * 24).toFixed(2)} h at 12:00 UT, subsolar latitude ${deg(junSolstice.subsolarLatitude).toFixed(2)}° at the June solstice`,
 )

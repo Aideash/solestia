@@ -178,7 +178,7 @@ const label = computed(() => {
 }
 
 /*
- * A lighter, more saturated sibling of the planet colour: enough separation for
+ * A lighter, more saturated sibling of the planet color: enough separation for
  * the day dial to read against the rim, and it lifts the darker bodies such as
  * Earth's green off the dark background.
  */

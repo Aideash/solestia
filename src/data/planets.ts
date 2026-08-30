@@ -22,6 +22,10 @@
  * only override W. Missing extras fall back to `iau`. See `frameFor`.
  */
 
+/** Inclusive local-calendar window of Table 1 linear Keplerian elements (1800–2050). */
+export const ELEMENTS_VALID_FROM_MS = new Date(1800, 0, 1).getTime()
+export const ELEMENTS_VALID_TO_MS = new Date(2050, 11, 31, 23, 59, 59, 999).getTime()
+
 export type PlanetId =
   'mercury' | 'venus' | 'earth' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
 

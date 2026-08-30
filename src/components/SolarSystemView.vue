@@ -6,6 +6,7 @@ import { orbitPoint, wrapRad, type SolarSystemSnapshot } from '../lib/kepler.ts'
 const props = defineProps<{
   snapshot: SolarSystemSnapshot
   selectedPlanet?: PlanetId | null
+  live?: boolean
   showFacing?: boolean
   showPerihelion?: boolean
 }>()
@@ -178,10 +179,12 @@ const rows = computed(() =>
       role="img"
       aria-label="Solar system orrery with evenly spaced orbits, Earth perihelion at the top"
     >
-      <title>Solar system now</title>
+      <title>
+        {{ live ? 'Solar system now' : `Solar system at ${snapshot.at.toISOString()}` }}
+      </title>
       <desc>
         Concentric rings for Mercury through Neptune. Earth's perihelion is at the top, aphelion at
-        the bottom. Planets sit at their current heliocentric longitude in that frame, each with a
+        the bottom. Planets sit at their heliocentric longitude for the selected time, each with a
         short whisker showing where its prime meridian points in the selected longitude system.
       </desc>
       <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />

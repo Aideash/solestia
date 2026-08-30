@@ -1,4 +1,6 @@
 import {
+  ELEMENTS_VALID_FROM_MS,
+  ELEMENTS_VALID_TO_MS,
   PLANETS,
   frameFor,
   type IauFrame,
@@ -90,6 +92,15 @@ export type SolarSystemSnapshot = {
 
 export function julianDate(date: Date): number {
   return UNIX_EPOCH_JD + date.getTime() / MS_PER_DAY
+}
+
+export function clampEpochMs(ms: number): number {
+  return Math.min(ELEMENTS_VALID_TO_MS, Math.max(ELEMENTS_VALID_FROM_MS, ms))
+}
+
+export function clampEpoch(date: Date): Date {
+  const ms = clampEpochMs(date.getTime())
+  return ms === date.getTime() ? date : new Date(ms)
 }
 
 export function centuriesSinceJ2000(date: Date): number {
@@ -259,7 +270,7 @@ export function bodyFrame(
     z: Math.sin(dec),
   }
   // ẑ × pole, which stays well defined for Earth's near-polar pole because the
-  // components shrink together and normalising recovers the direction.
+  // components shrink together and normalizing recovers the direction.
   const node = normalize({ x: -pole.y, y: pole.x, z: 0 })
   const east = cross(pole, node)
   const w = degToRad(iau.w0 + iau.wDot * days)
