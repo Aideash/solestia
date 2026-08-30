@@ -28,6 +28,10 @@ export type PlanetState = {
   /** Semi-major axis in AU (unused for equal-ring display). */
   a: number
   e: number
+  /** Orbital inclination to the ecliptic of J2000, radians. */
+  inclination: number
+  /** IAU prime meridian angle W at J2000, radians, in the selected frame. */
+  w0: number
   /** Mean anomaly, radians. */
   meanAnomaly: number
   /** True anomaly, radians. */
@@ -360,6 +364,8 @@ function planetState(
     symbol: planet.symbol,
     a,
     e,
+    inclination: i,
+    w0: wrapRad(degToRad(iau.w0)),
     meanAnomaly: wrapRad(meanAnomaly),
     trueAnomaly: wrapRad(nu),
     perihelionLongitude: wrapRad(varpi),

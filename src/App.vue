@@ -135,7 +135,7 @@ $center-width: 32rem;
 $flanked-width: 78rem;
 
 .app {
-  max-width: 76rem;
+  max-width: 1500px;
   margin: 0 auto;
   padding: $spacing-lg $spacing-md 2.5rem;
   min-height: 100vh;

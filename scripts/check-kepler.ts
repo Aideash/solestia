@@ -76,6 +76,18 @@ assert(
   Math.abs(deg(earthPeri.obliquity) - 23.44) < 0.01,
   `Earth obliquity should be ~23.44°, got ${deg(earthPeri.obliquity).toFixed(2)}°`,
 )
+assert(
+  Math.abs(deg(earthPeri.inclination)) < 0.01,
+  `Earth inclination to the J2000 ecliptic should be ~0°, got ${deg(earthPeri.inclination).toFixed(4)}°`,
+)
+assert(
+  Math.abs(mercury.e - 0.2056) < 0.001,
+  `Mercury eccentricity should be ~0.2056, got ${mercury.e}`,
+)
+assert(
+  Math.abs(deg(mercury.w0) - 329.5988) < 0.01,
+  `Mercury W0 (IAU) should be ~329.6°, got ${deg(mercury.w0).toFixed(3)}°`,
+)
 
 for (const planet of perihelion.planets) {
   assert(

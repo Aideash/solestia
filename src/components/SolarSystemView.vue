@@ -65,21 +65,109 @@ const showSunFacing = ref(true)
 
 const settingsOpen = ref(false)
 const settingsRoot = ref<HTMLElement | null>(null)
+const columnsOpen = ref(false)
+const columnsRoot = ref<HTMLElement | null>(null)
+
+const COLUMN_IDS = [
+  'e',
+  'obliquity',
+  'rotation',
+  'orbit',
+  'longitude',
+  'anomaly',
+  'inclination',
+  'day',
+  'w0',
+  'resonance',
+  'a',
+  'q',
+  'Q',
+] as const
+
+type ColumnId = (typeof COLUMN_IDS)[number]
+
+const COLUMN_CATALOG: { id: ColumnId; heading: string; label: string; onByDefault: boolean }[] = [
+  { id: 'e', heading: 'e', label: 'Eccentricity (e)', onByDefault: true },
+  { id: 'obliquity', heading: 'ε', label: 'Obliquity (ε)', onByDefault: true },
+  { id: 'rotation', heading: 'P_rot', label: 'Rotation period', onByDefault: true },
+  { id: 'orbit', heading: 'P_orb', label: 'Orbital period', onByDefault: true },
+  { id: 'longitude', heading: 'λ', label: 'Longitude (λ)', onByDefault: false },
+  { id: 'anomaly', heading: 'ν', label: 'True anomaly (ν)', onByDefault: false },
+  { id: 'inclination', heading: 'i', label: 'Orbital inclination (i)', onByDefault: false },
+  { id: 'day', heading: 'rot', label: 'Rotation progress', onByDefault: false },
+  { id: 'w0', heading: 'W₀', label: 'Prime meridian at J2000 (W₀)', onByDefault: false },
+  { id: 'resonance', heading: 'P_orb/P_rot', label: 'Spin–orbit ratio', onByDefault: false },
+  { id: 'a', heading: 'a', label: 'Mean distance (a)', onByDefault: false },
+  { id: 'q', heading: 'q', label: 'Perihelion distance (q)', onByDefault: false },
+  { id: 'Q', heading: 'Q', label: 'Aphelion distance (Q)', onByDefault: false },
+]
+
+const DEFAULT_COLUMNS = COLUMN_CATALOG.filter((col) => col.onByDefault).map((col) => col.id)
+const COLUMNS_STORAGE_KEY = 'solestia.readoutColumns'
+
+function isColumnId(value: unknown): value is ColumnId {
+  return typeof value === 'string' && (COLUMN_IDS as readonly string[]).includes(value)
+}
+
+function loadColumns(): Set<ColumnId> {
+  try {
+    const raw = localStorage.getItem(COLUMNS_STORAGE_KEY)
+    if (!raw) return new Set(DEFAULT_COLUMNS)
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set(DEFAULT_COLUMNS)
+    return new Set(parsed.filter(isColumnId))
+  } catch {
+    return new Set(DEFAULT_COLUMNS)
+  }
+}
+
+const visibleColumns = ref<Set<ColumnId>>(loadColumns())
+
+function showColumn(id: ColumnId): boolean {
+  return visibleColumns.value.has(id)
+}
+
+function persistColumns(next: Set<ColumnId>) {
+  try {
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...next]))
+  } catch {
+    // Private mode or quota — the picker still works for the session.
+  }
+}
+
+function toggleColumn(id: ColumnId) {
+  const next = new Set(visibleColumns.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  visibleColumns.value = next
+  persistColumns(next)
+}
 
 function toggleSettings() {
+  columnsOpen.value = false
   settingsOpen.value = !settingsOpen.value
 }
 
-function onSettingsDocPointer(event: PointerEvent) {
-  if (!settingsOpen.value) return
-  const target = event.target
-  if (target instanceof Node && settingsRoot.value?.contains(target)) return
+function toggleColumns() {
   settingsOpen.value = false
+  columnsOpen.value = !columnsOpen.value
+}
+
+function menuContains(root: HTMLElement | null, target: EventTarget | null): boolean {
+  return target instanceof Node && !!root?.contains(target)
+}
+
+function onSettingsDocPointer(event: PointerEvent) {
+  const target = event.target
+  if (settingsOpen.value && !menuContains(settingsRoot.value, target)) settingsOpen.value = false
+  if (columnsOpen.value && !menuContains(columnsRoot.value, target)) columnsOpen.value = false
 }
 
 function onSettingsDocKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !settingsOpen.value) return
+  if (event.key !== 'Escape') return
+  if (!settingsOpen.value && !columnsOpen.value) return
   settingsOpen.value = false
+  columnsOpen.value = false
   event.preventDefault()
   event.stopPropagation()
 }
@@ -110,6 +198,54 @@ function toggleRotationKind() {
 
 function toggleOrbitUnit() {
   orbitUnit.value = orbitUnit.value === 'earth' ? 'local' : 'earth'
+}
+
+function formatEcc(e: number): string {
+  if (e >= 0.1) return e.toFixed(4)
+  if (e >= 0.01) return e.toFixed(5)
+  return e.toFixed(6)
+}
+
+function formatDayClock(frac: number): string {
+  const totalMin = Math.round(frac * 24 * 60)
+  const wrapped = ((totalMin % (24 * 60)) + 24 * 60) % (24 * 60)
+  const hours = Math.floor(wrapped / 60)
+  const minutes = wrapped % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+function gcd(a: number, b: number): number {
+  let x = Math.abs(Math.round(a))
+  let y = Math.abs(b)
+  while (y) {
+    const t = y
+    y = x % y
+    x = t
+  }
+  return x || 1
+}
+
+/** Small integer ratio near `value`, or null if nothing is close. */
+function simpleRatio(value: number): string | null {
+  if (!Number.isFinite(value) || value <= 0) return null
+  let bestNum = 0
+  let bestDen = 1
+  let bestErr = Infinity
+  for (let den = 1; den <= 8; den++) {
+    const num = Math.round(value * den)
+    if (num < 1 || num > 16) continue
+    const err = Math.abs(value - num / den)
+    if (err < bestErr) {
+      bestErr = err
+      bestNum = num
+      bestDen = den
+    }
+  }
+  if (bestNum === 0) return null
+  const relative = bestErr / value
+  if (relative > 0.012 && bestErr > 0.02) return null
+  const g = gcd(bestNum, bestDen)
+  return `${bestNum / g}:${bestDen / g}`
 }
 
 const rings = computed(() => {
@@ -207,8 +343,12 @@ const rows = computed(() =>
       rotationKind.value === 'sidereal' ? planet.siderealRotationDays : planet.solarDayDays
     const localOrbitDays = planet.siderealOrbitDays / rotationDays
     const localUnit = rotationKind.value === 'sidereal' ? 'sid. d' : 'sol. d'
+    const spinOrbit = planet.siderealOrbitDays / planet.siderealRotationDays
+    const q = planet.a * (1 - planet.e)
+    const Q = planet.a * (1 + planet.e)
     return {
       planet,
+      eccentricity: formatEcc(planet.e),
       rotation: {
         primary: formatQuantity(rotationDays * HOURS_PER_DAY, 'h'),
         secondary: formatQuantity(rotationDays, 'd'),
@@ -226,6 +366,17 @@ const rows = computed(() =>
               primary: formatQuantity(localOrbitDays, localUnit),
               secondary: '',
             },
+      day: {
+        primary: `${(planet.dayFraction * 100).toFixed(1)}%`,
+        secondary: formatDayClock(planet.dayFraction),
+      },
+      resonance: {
+        primary: spinOrbit.toFixed(3),
+        secondary: simpleRatio(spinOrbit),
+      },
+      a: formatQuantity(planet.a, 'AU'),
+      q: formatQuantity(q, 'AU'),
+      Q: formatQuantity(Q, 'AU'),
     }
   }),
 )
@@ -303,7 +454,7 @@ const rows = computed(() =>
         <g
           v-for="ring in rings"
           :key="ring.planet.id"
-          :class="{ selected: selectedPlanet === ring.planet.id }"
+          :class="{ 'satellite-group': true, selected: selectedPlanet === ring.planet.id }"
           @click="emit('select', ring.planet.id)"
         >
           <title>{{ ring.label }}</title>
@@ -348,9 +499,9 @@ const rows = computed(() =>
       </svg>
     </div>
 
-    <table class="readout">
-      <caption class="readout__caption">
-        Orbit progress
+    <div class="readout-block">
+      <div class="readout__caption">
+        <span class="readout__caption-title">Orbit progress</span>
         <span class="help">
           <button
             type="button"
@@ -362,12 +513,30 @@ const rows = computed(() =>
           </button>
           <div id="orbit-help" role="tooltip" class="help__panel">
             <p>
+              <strong>e</strong> is orbital eccentricity — 0 is a circle, Mercury’s ~0.206 is the
+              most stretched among the planets.
+            </p>
+            <p>
+              <strong>ε</strong> (epsilon) is obliquity — the tilt of the spin axis from ecliptic
+              north. Over 90° means the body rotates retrograde.
+            </p>
+            <p>
               <strong>λ</strong> (lambda) is heliocentric ecliptic longitude — the planet’s angular
               position around the Sun, measured along the ecliptic from the J2000 vernal equinox.
             </p>
             <p>
               <strong>ν</strong> (nu) is the true anomaly — the angle at the Sun between the planet
               and its perihelion.
+            </p>
+            <p>
+              <strong>i</strong> is orbital inclination to the ecliptic of J2000.
+              <strong>W<sub>0</sub></strong> is the prime-meridian angle at J2000 in the longitude
+              system chosen at the top of the page. <strong>rot</strong> is how far the selected
+              meridian has come through its solar day (0% at local midnight).
+              <strong>P<sub>orb</sub>/P<sub>rot</sub></strong> is sidereal orbits per spin; a nearby
+              small integer ratio is shown when the match is close (Mercury 3:2).
+              <strong>a</strong>, <strong>q</strong>, and <strong>Q</strong> are mean, perihelion,
+              and aphelion distances in AU.
             </p>
             <p>
               <strong>P<sub>rot</sub></strong> is the rotation period in the longitude system chosen
@@ -387,78 +556,163 @@ const rows = computed(() =>
             </p>
           </div>
         </span>
-      </caption>
-      <thead>
-        <tr>
-          <th scope="col">Planet</th>
-          <th scope="col">λ</th>
-          <th scope="col">ν</th>
-          <th scope="col">
-            <button
-              type="button"
-              class="th-toggle"
-              :aria-label="
-                rotationKind === 'sidereal'
-                  ? 'Rotation period, sidereal. Click to show solar day.'
-                  : 'Rotation period, solar. Click to show sidereal day.'
-              "
-              @click="toggleRotationKind"
+        <div ref="columnsRoot" class="readout__columns">
+          <button
+            type="button"
+            class="readout__columns-btn"
+            :aria-expanded="columnsOpen"
+            aria-controls="readout-columns"
+            aria-haspopup="true"
+            aria-label="Table columns"
+            @click="toggleColumns"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3 5h4v14H3V5Zm7 0h4v14h-4V5Zm7 0h4v14h-4V5Z" />
+            </svg>
+          </button>
+          <Transition name="settings-menu">
+            <div
+              v-show="columnsOpen"
+              id="readout-columns"
+              class="orrery__settings-menu readout__columns-menu"
+              aria-labelledby="readout-columns-title"
             >
-              <span class="th-sym">P<sub>rot</sub></span>
-              <span class="th-mode">{{ rotationKind }}</span>
-            </button>
-          </th>
-          <th scope="col">
-            <button
-              type="button"
-              class="th-toggle"
-              :aria-label="
-                orbitUnit === 'earth'
-                  ? 'Orbital period in Earth days and years. Click to show the planet’s own days.'
-                  : 'Orbital period in the planet’s own days. Click to show Earth days and years.'
-              "
-              @click="toggleOrbitUnit"
+              <p id="readout-columns-title" class="orrery__settings-title">Columns</p>
+              <label v-for="col in COLUMN_CATALOG" :key="col.id" class="orrery__settings-item">
+                <input
+                  type="checkbox"
+                  :checked="showColumn(col.id)"
+                  @change="toggleColumn(col.id)"
+                />
+                {{ col.label }}
+              </label>
+            </div>
+          </Transition>
+        </div>
+      </div>
+      <div class="readout-scroll">
+        <table class="readout">
+          <caption class="readout__sr">
+            Orbit progress
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" class="readout__planet">Planet</th>
+              <th v-if="showColumn('e')" scope="col">e</th>
+              <th v-if="showColumn('obliquity')" scope="col">ε</th>
+              <th v-if="showColumn('rotation')" scope="col">
+                <button
+                  type="button"
+                  class="th-toggle"
+                  :aria-label="
+                    rotationKind === 'sidereal'
+                      ? 'Rotation period, sidereal. Click to show solar day.'
+                      : 'Rotation period, solar. Click to show sidereal day.'
+                  "
+                  @click="toggleRotationKind"
+                >
+                  <span class="th-sym">P<sub>rot</sub></span>
+                  <span class="th-mode">{{ rotationKind }}</span>
+                </button>
+              </th>
+              <th v-if="showColumn('orbit')" scope="col">
+                <button
+                  type="button"
+                  class="th-toggle"
+                  :aria-label="
+                    orbitUnit === 'earth'
+                      ? 'Orbital period in Earth days and years. Click to show the planet’s own days.'
+                      : 'Orbital period in the planet’s own days. Click to show Earth days and years.'
+                  "
+                  @click="toggleOrbitUnit"
+                >
+                  <span class="th-sym">P<sub>orb</sub></span>
+                  <span class="th-mode">{{ orbitUnit === 'earth' ? 'Earth d' : 'own days' }}</span>
+                </button>
+              </th>
+              <th v-if="showColumn('longitude')" scope="col">λ</th>
+              <th v-if="showColumn('anomaly')" scope="col">ν</th>
+              <th v-if="showColumn('inclination')" scope="col">i</th>
+              <th v-if="showColumn('day')" scope="col">rot</th>
+              <th v-if="showColumn('w0')" scope="col">W<sub>0</sub></th>
+              <th v-if="showColumn('resonance')" scope="col">P<sub>orb</sub>/P<sub>rot</sub></th>
+              <th v-if="showColumn('a')" scope="col">a</th>
+              <th v-if="showColumn('q')" scope="col">q</th>
+              <th v-if="showColumn('Q')" scope="col">Q</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in rows"
+              :key="row.planet.id"
+              :class="{ selected: selectedPlanet === row.planet.id }"
+              :tabindex="tabStopPlanet === row.planet.id ? 0 : -1"
+              :aria-current="selectedPlanet === row.planet.id ? 'true' : undefined"
+              @click="emit('select', row.planet.id)"
+              @focus="focusedPlanet = row.planet.id"
+              @keydown="onRowKeydown($event, row.planet.id)"
             >
-              <span class="th-sym">P<sub>orb</sub></span>
-              <span class="th-mode">{{ orbitUnit === 'earth' ? 'Earth d' : 'own days' }}</span>
-            </button>
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="row in rows"
-          :key="row.planet.id"
-          :class="{ selected: selectedPlanet === row.planet.id }"
-          :tabindex="tabStopPlanet === row.planet.id ? 0 : -1"
-          :aria-current="selectedPlanet === row.planet.id ? 'true' : undefined"
-          @click="emit('select', row.planet.id)"
-          @focus="focusedPlanet = row.planet.id"
-          @keydown="onRowKeydown($event, row.planet.id)"
-        >
-          <th scope="row">
-            <span class="swatch" :style="{ background: row.planet.color }"></span>
-            {{ row.planet.name }}
-          </th>
-          <td>
-            <span class="pair">{{ formatDeg(row.planet.longitude) }}</span>
-            <span class="pair pair--dim">{{ formatRad(row.planet.longitude) }}</span>
-          </td>
-          <td>
-            <span class="pair">{{ formatDeg(row.planet.trueAnomaly) }}</span>
-            <span class="pair pair--dim">{{ formatRad(row.planet.trueAnomaly) }}</span>
-          </td>
-          <td :title="row.rotation.spin">
-            <span class="pair">{{ row.rotation.primary }}</span>
-            <span class="pair pair--dim">{{ row.rotation.secondary }}</span>
-          </td>
-          <td>
-            <span class="pair">{{ row.orbit.primary }}</span>
-            <span v-if="row.orbit.secondary" class="pair pair--dim">{{ row.orbit.secondary }}</span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+              <th scope="row" class="readout__planet">
+                <span class="swatch" :style="{ background: row.planet.color }"></span>
+                {{ row.planet.name }}
+              </th>
+              <td v-if="showColumn('e')">
+                <span class="pair">{{ row.eccentricity }}</span>
+              </td>
+              <td v-if="showColumn('obliquity')" :title="row.rotation.spin">
+                <span class="pair">{{ formatDeg(row.planet.obliquity) }}</span>
+                <span class="pair pair--dim">{{ formatRad(row.planet.obliquity) }}</span>
+              </td>
+              <td v-if="showColumn('rotation')" :title="row.rotation.spin">
+                <span class="pair">{{ row.rotation.primary }}</span>
+                <span class="pair pair--dim">{{ row.rotation.secondary }}</span>
+              </td>
+              <td v-if="showColumn('orbit')">
+                <span class="pair">{{ row.orbit.primary }}</span>
+                <span v-if="row.orbit.secondary" class="pair pair--dim">{{
+                  row.orbit.secondary
+                }}</span>
+              </td>
+              <td v-if="showColumn('longitude')">
+                <span class="pair">{{ formatDeg(row.planet.longitude) }}</span>
+                <span class="pair pair--dim">{{ formatRad(row.planet.longitude) }}</span>
+              </td>
+              <td v-if="showColumn('anomaly')">
+                <span class="pair">{{ formatDeg(row.planet.trueAnomaly) }}</span>
+                <span class="pair pair--dim">{{ formatRad(row.planet.trueAnomaly) }}</span>
+              </td>
+              <td v-if="showColumn('inclination')">
+                <span class="pair">{{ formatDeg(row.planet.inclination) }}</span>
+                <span class="pair pair--dim">{{ formatRad(row.planet.inclination) }}</span>
+              </td>
+              <td v-if="showColumn('day')">
+                <span class="pair">{{ row.day.primary }}</span>
+                <span class="pair pair--dim">{{ row.day.secondary }}</span>
+              </td>
+              <td v-if="showColumn('w0')">
+                <span class="pair">{{ formatDeg(row.planet.w0) }}</span>
+                <span class="pair pair--dim">{{ formatRad(row.planet.w0) }}</span>
+              </td>
+              <td v-if="showColumn('resonance')">
+                <span class="pair">{{ row.resonance.primary }}</span>
+                <span v-if="row.resonance.secondary" class="pair pair--dim">{{
+                  row.resonance.secondary
+                }}</span>
+              </td>
+              <td v-if="showColumn('a')">
+                <span class="pair">{{ row.a }}</span>
+              </td>
+              <td v-if="showColumn('q')">
+                <span class="pair">{{ row.q }}</span>
+              </td>
+              <td v-if="showColumn('Q')">
+                <span class="pair">{{ row.Q }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -645,7 +899,7 @@ const rows = computed(() =>
 
   // The Sun is the frame of reference, not a selectable body, so it neither
   // offers a pointer nor dims behind a selection.
-  g:not(.sun-mark) {
+  g.satellite-group {
     cursor: pointer;
 
     &:hover {
@@ -657,8 +911,8 @@ const rows = computed(() =>
     }
   }
 
-  &:has(g.selected) {
-    g:not(.selected):not(:hover):not(.sun-mark) {
+  &:has(g.satellite-group.selected) {
+    g.satellite-group:not(.selected):not(:hover) {
       opacity: 0.4;
     }
   }
@@ -708,18 +962,90 @@ const rows = computed(() =>
   opacity: 0.7;
 }
 
+.readout-block {
+  min-width: 0;
+}
+
+.readout-scroll {
+  overflow-x: auto;
+  width: 100%;
+}
+
 .readout {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.8125rem;
-  overflow: visible;
 }
 
 .readout__caption {
-  caption-side: top;
-  text-align: left;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
   margin-bottom: $spacing-sm;
+  font-weight: 600;
+}
+
+.readout__caption-title {
+  font-weight: 600;
+}
+
+.readout__columns {
+  position: relative;
+  flex: none;
+  margin-left: auto;
+}
+
+.readout__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.readout__columns {
+  position: relative;
+  flex: none;
+}
+
+.readout__columns-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--bg-raised) 85%, transparent);
+  color: $color-text-muted;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.readout__columns-btn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.readout__columns-btn:hover,
+.readout__columns-btn:focus-visible,
+.readout__columns-btn[aria-expanded='true'] {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  outline: none;
+}
+
+.readout__columns-menu {
+  z-index: 3;
+  max-height: min(22rem, 70vh);
+  overflow-y: auto;
 }
 
 .help {
@@ -757,11 +1083,13 @@ const rows = computed(() =>
 
 .help__panel {
   display: none;
+  overflow: auto;
   position: absolute;
   z-index: 2;
   top: 100%;
   left: 0;
   width: min(18.5rem, 70vw);
+  max-height: 350px;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: $radius-sm;
@@ -826,6 +1154,22 @@ td {
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
+}
+
+td {
+  min-width: 4.5rem;
+}
+
+.readout__planet {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+  box-shadow: 0.4rem 0 0.55rem -0.35rem var(--bg);
+}
+
+thead .readout__planet {
+  z-index: 2;
 }
 
 thead th {
