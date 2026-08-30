@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { PlanetId } from '../data/planets.ts'
+import { SELECTION_NOTES } from '../data/selectionNotes.ts'
 import { orbitPoint, wrapRad, type SolarSystemSnapshot } from '../lib/kepler.ts'
 
 const props = defineProps<{
@@ -62,6 +63,7 @@ const orbitUnit = ref<OrbitUnit>('earth')
 const showFacing = ref(true)
 const showPerihelion = ref(true)
 const showSunFacing = ref(true)
+const showNotes = ref(true)
 
 const settingsOpen = ref(false)
 const settingsRoot = ref<HTMLElement | null>(null)
@@ -294,6 +296,28 @@ const sunMark = computed(() => {
   return { from, to, label }
 })
 
+const viewBoxHeight = size + 2 * padY
+
+/** HTML callout pinned to the selected disc; omitted when that body has no notes. */
+const selectionCallout = computed(() => {
+  if (!showNotes.value) return null
+  const id = props.selectedPlanet
+  if (!id) return null
+  const paragraphs = SELECTION_NOTES[id]
+  if (!paragraphs?.length) return null
+  const ring = rings.value.find((item) => item.planet.id === id)
+  if (!ring) return null
+  const { x, y } = ring.body
+  return {
+    name: ring.planet.name,
+    paragraphs,
+    left: `${x}%`,
+    top: `${((y + padY) / viewBoxHeight) * 100}%`,
+    flipLeft: x >= cx,
+    flipAbove: y >= cy,
+  }
+})
+
 /**
  * Roving tabindex: the table is a single tab stop, then the arrow keys walk the
  * rows. The dials and the orrery stay click-only so the same eight planets don't
@@ -422,6 +446,10 @@ const rows = computed(() =>
               <input v-model="showPerihelion" type="checkbox" />
               Perihelion
             </label>
+            <label class="orrery__settings-item">
+              <input v-model="showNotes" type="checkbox" />
+              Oddity Notes
+            </label>
           </div>
         </Transition>
       </div>
@@ -497,6 +525,20 @@ const rows = computed(() =>
           />
         </g>
       </svg>
+      <aside
+        v-if="selectionCallout"
+        class="orrery__note"
+        :class="{
+          'orrery__note--left': selectionCallout.flipLeft,
+          'orrery__note--above': selectionCallout.flipAbove,
+        }"
+        :style="{ left: selectionCallout.left, top: selectionCallout.top }"
+        role="note"
+        :aria-label="`Notes for ${selectionCallout.name}`"
+      >
+        <p class="orrery__note-title">{{ selectionCallout.name }}</p>
+        <p v-for="(paragraph, i) in selectionCallout.paragraphs" :key="i">{{ paragraph }}</p>
+      </aside>
     </div>
 
     <div class="readout-block">
@@ -727,6 +769,52 @@ const rows = computed(() =>
 
 .orrery__diagram {
   position: relative;
+}
+
+.orrery__note {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  box-sizing: border-box;
+  width: min(18.5rem, 70%);
+  max-height: min(12rem, 45%);
+  overflow: auto;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: $radius-sm;
+  background: var(--bg-raised);
+  box-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 35%);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  transform: translate(0.45rem, 0.45rem);
+}
+
+.orrery__note--left {
+  transform: translate(calc(-100% - 0.45rem), 0.45rem);
+}
+
+.orrery__note--above {
+  transform: translate(0.45rem, calc(-100% - 0.45rem));
+}
+
+.orrery__note--left.orrery__note--above {
+  transform: translate(calc(-100% - 0.45rem), calc(-100% - 0.45rem));
+}
+
+.orrery__note p {
+  margin: 0 0 0.55rem;
+}
+
+.orrery__note p:last-child {
+  margin-bottom: 0;
+}
+
+.orrery__note-title {
+  margin: 0 0 0.4rem;
+  font-weight: 600;
 }
 
 .orrery__settings {
