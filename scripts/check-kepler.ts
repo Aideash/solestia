@@ -157,6 +157,36 @@ for (const planet of dayStart.planets) {
   )
 }
 
+// At local noon at Greenwich the prime meridian faces the Sun, so it should
+// point back down Earth's heliocentric longitude, half a turn from the planet.
+for (const noon of ['2026-01-03T12:00:00Z', '2026-06-21T12:00:00Z']) {
+  const earth = planetAt(noon, 'earth')
+  const gap = deg(wrapRadSigned(earth.facing.longitude - earth.longitude - Math.PI))
+  assert(
+    Math.abs(gap) < 5,
+    `Earth's prime meridian should face the Sun at ${noon}, off by ${gap.toFixed(2)}°`,
+  )
+}
+
+// Uranus spins about a pole lying almost in the ecliptic, so its meridian swings
+// far out of the plane; the inner planets keep theirs close to it.
+for (const planet of dayStart.planets) {
+  assert(
+    planet.facing.inPlane >= 0 && planet.facing.inPlane <= 1,
+    `${planet.name} facing projection should be a unit length, got ${planet.facing.inPlane}`,
+  )
+}
+const uranusMin = Math.min(
+  ...Array.from({ length: 64 }, (_, i) => {
+    const at = new Date(dayStart.at.getTime() + (i / 64) * 0.718 * 86_400_000)
+    return planetAt(at.toISOString(), 'uranus').facing.inPlane
+  }),
+)
+assert(
+  uranusMin < 0.3,
+  `Uranus should tip its meridian out of the ecliptic, floor was ${uranusMin}`,
+)
+
 function hoursFromWDot(wDot: number): number {
   return (360 / Math.abs(wDot)) * 24
 }

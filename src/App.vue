@@ -90,6 +90,8 @@ const clockLabel = computed(() =>
         <SolarSystemView
           :snapshot="snapshot"
           :selected-planet="selectedPlanet"
+          :show-facing="true"
+          :show-perihelion="true"
           @select="togglePlanet"
         />
       </div>

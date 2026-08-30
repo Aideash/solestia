@@ -6,6 +6,8 @@ import { orbitPoint, wrapRad, type SolarSystemSnapshot } from '../lib/kepler.ts'
 const props = defineProps<{
   snapshot: SolarSystemSnapshot
   selectedPlanet?: PlanetId | null
+  showFacing?: boolean
+  showPerihelion?: boolean
 }>()
 
 const emit = defineEmits<{ select: [id: PlanetId] }>()
@@ -21,6 +23,16 @@ const viewBox = `0 ${-padY} ${size} ${size + padY * 2}`
 
 const perihelionMark = orbitPoint(cx, cy, outerR + 2.2, 0)
 const aphelionMark = orbitPoint(cx, cy, outerR + 2.2, Math.PI)
+
+/**
+ * Whisker marking where each planet's prime meridian points. It clears the disc
+ * by `facingGap`, then runs between `facingMin` and `facingMax` so a meridian
+ * tipped out of the ecliptic reads as foreshortened without ever vanishing.
+ * The longest whisker stays well inside the gap to the next ring.
+ */
+const facingGap = 0.25
+const facingMin = 0.4
+const facingMax = 1.45
 
 function formatDeg(rad: number): string {
   return `${((rad * 180) / Math.PI).toFixed(1)}°`
@@ -58,15 +70,30 @@ function toggleOrbitUnit() {
 }
 
 const rings = computed(() => {
-  const { planets } = props.snapshot
+  const { planets, earthPerihelionLongitude, rotationFrame } = props.snapshot
   const last = Math.max(planets.length - 1, 1)
   return planets.map((planet, i) => {
     const r = innerR + (i / last) * (outerR - innerR)
     const body = orbitPoint(cx, cy, r, planet.offsetFromEarthPerihelion)
-    const periOffset = wrapRad(planet.perihelionLongitude - props.snapshot.earthPerihelionLongitude)
+    const periOffset = wrapRad(planet.perihelionLongitude - earthPerihelionLongitude)
     const periTick = orbitPoint(cx, cy, r, periOffset)
     const periInner = orbitPoint(cx, cy, r - 1.4, periOffset)
-    return { planet, r, body, periTick, periInner }
+
+    const bodyR = planet.id === 'earth' ? 1.7 : 1.45
+    const facingOffset = wrapRad(planet.facing.longitude - earthPerihelionLongitude)
+    const facingReach = bodyR + facingGap
+    const facingFrom = orbitPoint(body.x, body.y, facingReach, facingOffset)
+    const facingTo = orbitPoint(
+      body.x,
+      body.y,
+      facingReach + facingMin + (facingMax - facingMin) * planet.facing.inPlane,
+      facingOffset,
+    )
+    const label =
+      `${planet.name} — ${rotationFrame} prime meridian faces ` +
+      `${formatDeg(planet.facing.longitude)} ecliptic longitude`
+
+    return { planet, r, bodyR, body, periTick, periInner, facingFrom, facingTo, label }
   })
 })
 
@@ -154,7 +181,8 @@ const rows = computed(() =>
       <title>Solar system now</title>
       <desc>
         Concentric rings for Mercury through Neptune. Earth's perihelion is at the top, aphelion at
-        the bottom. Planets sit at their current heliocentric longitude in that frame.
+        the bottom. Planets sit at their current heliocentric longitude in that frame, each with a
+        short whisker showing where its prime meridian points in the selected longitude system.
       </desc>
       <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
       <text class="axis-label" :x="perihelionMark.x" :y="perihelionMark.y" text-anchor="middle">
@@ -173,8 +201,10 @@ const rows = computed(() =>
         :class="{ selected: selectedPlanet === ring.planet.id }"
         @click="emit('select', ring.planet.id)"
       >
+        <title>{{ ring.label }}</title>
         <circle class="orbit" :cx="cx" :cy="cy" :r="ring.r" />
         <line
+          v-if="showPerihelion"
           class="peri-tick"
           :x1="ring.periInner.x"
           :y1="ring.periInner.y"
@@ -185,11 +215,18 @@ const rows = computed(() =>
           class="body"
           :cx="ring.body.x"
           :cy="ring.body.y"
-          :r="ring.planet.id === 'earth' ? 1.7 : 1.45"
+          :r="ring.bodyR"
           :fill="ring.planet.color"
-        >
-          <title>{{ ring.planet.name }}</title>
-        </circle>
+        />
+        <line
+          v-if="showFacing"
+          class="facing"
+          :x1="ring.facingFrom.x"
+          :y1="ring.facingFrom.y"
+          :x2="ring.facingTo.x"
+          :y2="ring.facingTo.y"
+          :stroke="ring.planet.color"
+        />
       </g>
       <circle class="sun" :cx="cx" :cy="cy" r="3.5" />
     </svg>
@@ -220,7 +257,9 @@ const rows = computed(() =>
               at the top of the page (IAU cartographic W, magnetic System III, or cloud features).
               Inner planets have only the IAU frame, so magnetic and cloud leave them unchanged.
               Click the heading to switch between a sidereal day (one spin relative to the stars)
-              and a solar day (noon to noon). Hover a value for that planet’s axial tilt.
+              and a solar day (noon to noon). Hover a value for that planet’s axial tilt. The
+              whisker on each planet above points where that meridian faces; it shortens as the
+              meridian tips out of the ecliptic plane and away from the viewer.
             </p>
             <p>
               <strong>P<sub>orb</sub></strong> is the sidereal orbital period — one revolution
@@ -358,6 +397,16 @@ const rows = computed(() =>
 .peri-tick {
   stroke: color-mix(in srgb, var(--accent) 55%, transparent);
   stroke-width: 0.35;
+}
+
+.facing {
+  stroke-width: 0.32;
+  stroke-linecap: round;
+  opacity: 0.55;
+
+  g.selected & {
+    opacity: 0.95;
+  }
 }
 
 .sun {
@@ -512,11 +561,13 @@ tbody tr {
   }
 
   &.selected {
-    box-shadow: 0px 0px 25px 0px color-mix(in srgb, var(--border), var(--border-strong)) inset;
+    box-shadow: 0px 0px 25px 0px var(--border-strong) inset;
   }
 
   &.selected:hover {
-    box-shadow: 0px 0px 25px 0px var(--border-strong) inset;
+    box-shadow:
+      0px 0px 15px -3px var(--border-strong),
+      0px 0px 30px 0px var(--border-strong) inset;
   }
 }
 

@@ -63,11 +63,28 @@ export type PlanetState = {
   subsolarLatitude: number
   /** Solar days in one orbit. Below 1 for Mercury, whose day outlasts its year. */
   solsPerYear: number
+  /** Where the prime meridian points, seen from north of the ecliptic. */
+  facing: Facing
+}
+
+/**
+ * The prime meridian as a compass bearing on the ecliptic plane: `longitude`
+ * is where it points, and `inPlane` is how much of the unit vector survives the
+ * projection — 1 when the meridian lies in the plane, 0 when it points at an
+ * ecliptic pole and the longitude carries no information. Uranus, whose pole is
+ * nearly in the plane, passes through that degenerate case twice a spin.
+ */
+export type Facing = {
+  /** Ecliptic-of-J2000 longitude, radians. */
+  longitude: number
+  /** Length of the projection onto the ecliptic plane, 0 to 1. */
+  inPlane: number
 }
 
 export type SolarSystemSnapshot = {
   at: Date
   earthPerihelionLongitude: number
+  rotationFrame: RotationFrameChoice
   planets: PlanetState[]
 }
 
@@ -278,6 +295,12 @@ export function localSolarTime(
   }
 }
 
+/** Prime-meridian direction projected onto the ecliptic plane. */
+export function primeMeridianFacing(iau: IauFrame, days: number): Facing {
+  const v = equatorialToEcliptic(bodyFrame(iau, days).primeMeridian)
+  return { longitude: wrapRad(Math.atan2(v.y, v.x)), inPlane: Math.hypot(v.x, v.y) }
+}
+
 function planetState(
   planet: Planet,
   t: number,
@@ -294,10 +317,11 @@ function planetState(
   const retrograde = planet.rotation.theta > 90
   const siderealOrbitDays = (360 * 36525) / planet.elements.LDot
   const position = heliocentricEcliptic(a, e, E, i, Omega, varpi)
+  const days = t * 36525
   const { dayFraction, subsolarLatitude } = localSolarTime(
     iau,
     position,
-    t * 36525,
+    days,
     360 / siderealOrbitDays,
   )
   const solarDay = solarDayDays(siderealRotationDays, siderealOrbitDays, retrograde)
@@ -325,6 +349,7 @@ function planetState(
     dayFraction,
     subsolarLatitude,
     solsPerYear: siderealOrbitDays / solarDay,
+    facing: primeMeridianFacing(iau, days),
   }
 }
 
@@ -341,6 +366,7 @@ export function solarSystemAt(
   return {
     at: date,
     earthPerihelionLongitude: earthVarpi,
+    rotationFrame,
     planets: PLANETS.map((planet) => planetState(planet, t, earthVarpi, rotationFrame)),
   }
 }
