@@ -99,8 +99,6 @@ const outerPlanets = computed(() => snapshot.value.planets.slice(4))
           :snapshot="snapshot"
           :selected-planet="selectedPlanet"
           :live="live"
-          :show-facing="true"
-          :show-perihelion="true"
           @select="togglePlanet"
         />
         <div class="app__controls">

@@ -2,6 +2,7 @@ import {
   ELEMENTS_VALID_FROM_MS,
   ELEMENTS_VALID_TO_MS,
   PLANETS,
+  SUN,
   frameFor,
 } from '../src/data/planets.ts'
 import {
@@ -243,27 +244,64 @@ assert(
 
 // The IAU pole should reproduce the hand-converted ecliptic spin axis, and its
 // prime meridian rate should reproduce the tabulated rotation period.
-for (const planet of PLANETS) {
-  const pole = equatorialToEcliptic(bodyFrame(planet.iau, 0).pole)
-  const spin = Math.sign(planet.iau.wDot)
+for (const body of [...PLANETS, SUN]) {
+  const pole = equatorialToEcliptic(bodyFrame(body.iau, 0).pole)
+  const spin = Math.sign(body.iau.wDot)
   const theta = deg(Math.acos(spin * pole.z))
   const phi = (deg(Math.atan2(spin * pole.y, spin * pole.x)) + 360) % 360
   assert(
-    Math.abs(theta - planet.rotation.theta) < 0.001,
-    `${planet.name} IAU pole tilt ${theta.toFixed(4)}° should match stored ${planet.rotation.theta}°`,
+    Math.abs(theta - body.rotation.theta) < 0.001,
+    `${body.name} IAU pole tilt ${theta.toFixed(4)}° should match stored ${body.rotation.theta}°`,
   )
-  const phiGap = Math.abs((((phi - planet.rotation.phi + 540) % 360) - 180) % 360)
+  const phiGap = Math.abs((((phi - body.rotation.phi + 540) % 360) - 180) % 360)
   assert(
     phiGap < 0.001,
-    `${planet.name} IAU pole azimuth ${phi.toFixed(4)}° should match stored ${planet.rotation.phi}°`,
+    `${body.name} IAU pole azimuth ${phi.toFixed(4)}° should match stored ${body.rotation.phi}°`,
   )
-  const iauRotationDays = 360 / Math.abs(planet.iau.wDot)
-  const storedRotationDays = (2 * Math.PI) / planet.rotation.r
+  const iauRotationDays = 360 / Math.abs(body.iau.wDot)
+  const storedRotationDays = (2 * Math.PI) / body.rotation.r
   assert(
     Math.abs(iauRotationDays - storedRotationDays) < 1e-12,
-    `${planet.name} IAU rotation ${iauRotationDays.toFixed(6)} d should match stored ${storedRotationDays.toFixed(6)} d`,
+    `${body.name} IAU rotation ${iauRotationDays.toFixed(6)} d should match stored ${storedRotationDays.toFixed(6)} d`,
   )
 }
+
+// The Sun spins on the Carrington W in every frame, tilted 7.25° from ecliptic
+// north, so its meridian stays close to the plane and repeats after one period.
+const sun = dayStart.sun
+assert(
+  Math.abs(sun.siderealRotationDays - 25.38) < 0.005,
+  `Carrington rotation should be ~25.38 d, got ${sun.siderealRotationDays}`,
+)
+assert(
+  Math.abs(deg(sun.obliquity) - 7.25) < 0.01,
+  `Sun's axis should tilt ~7.25° from ecliptic north, got ${deg(sun.obliquity).toFixed(3)}°`,
+)
+for (const frame of ['magnetic', 'cloud'] as const) {
+  assert(
+    frameFor(SUN, frame).wDot === SUN.iau.wDot,
+    `Sun should stay on the Carrington W in the ${frame} frame`,
+  )
+}
+const sunTurn = solarSystemAt(
+  new Date(dayStart.at.getTime() + sun.siderealRotationDays * 86_400_000),
+).sun
+assert(
+  Math.abs(deg(wrapRadSigned(sunTurn.facing.longitude - sun.facing.longitude))) < 0.1,
+  `Sun's meridian should return after one rotation, off by ${deg(
+    wrapRadSigned(sunTurn.facing.longitude - sun.facing.longitude),
+  ).toFixed(3)}°`,
+)
+const sunInPlane = Math.min(
+  ...Array.from({ length: 64 }, (_, i) => {
+    const at = new Date(dayStart.at.getTime() + (i / 64) * sun.siderealRotationDays * 86_400_000)
+    return solarSystemAt(at).sun.facing.inPlane
+  }),
+)
+assert(
+  sunInPlane > 0.99,
+  `Sun's meridian should stay near the ecliptic plane, floor was ${sunInPlane}`,
+)
 
 console.log(
   `ok  Earth ν ${deg(earthPeri.trueAnomaly).toFixed(1)}° on 2026-01-03, ${deg(earthAph.trueAnomaly).toFixed(1)}° on 2026-07-04`,

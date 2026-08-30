@@ -2,6 +2,7 @@ import {
   ELEMENTS_VALID_FROM_MS,
   ELEMENTS_VALID_TO_MS,
   PLANETS,
+  SUN,
   frameFor,
   type IauFrame,
   type Planet,
@@ -83,10 +84,25 @@ export type Facing = {
   inPlane: number
 }
 
+/**
+ * The Sun sits at the origin, so it has a spin but no orbit. Its rotation is
+ * always the Carrington W: the frame picker leaves it alone, like the inner
+ * planets.
+ */
+export type SunState = {
+  /** Carrington sidereal rotation period in days. */
+  siderealRotationDays: number
+  /** Spin axis tilt from ecliptic north, radians. */
+  obliquity: number
+  /** Where the prime meridian points, seen from north of the ecliptic. */
+  facing: Facing
+}
+
 export type SolarSystemSnapshot = {
   at: Date
   earthPerihelionLongitude: number
   rotationFrame: RotationFrameChoice
+  sun: SunState
   planets: PlanetState[]
 }
 
@@ -364,6 +380,15 @@ function planetState(
   }
 }
 
+function sunState(t: number, rotationFrame: RotationFrameChoice): SunState {
+  const iau = frameFor(SUN, rotationFrame)
+  return {
+    siderealRotationDays: 360 / Math.abs(iau.wDot),
+    obliquity: degToRad(SUN.rotation.theta),
+    facing: primeMeridianFacing(iau, t * 36525),
+  }
+}
+
 export function solarSystemAt(
   date: Date,
   rotationFrame: RotationFrameChoice = 'iau',
@@ -378,6 +403,7 @@ export function solarSystemAt(
     at: date,
     earthPerihelionLongitude: earthVarpi,
     rotationFrame,
+    sun: sunState(t, rotationFrame),
     planets: PLANETS.map((planet) => planetState(planet, t, earthVarpi, rotationFrame)),
   }
 }

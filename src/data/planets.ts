@@ -86,10 +86,8 @@ export type NamedMeridian = PrimeMeridian & {
   label: string
 }
 
-export type Planet = {
-  id: PlanetId
-  name: string
-  color: string
+/** The spin of anything with a pole and a prime meridian: the planets, and the Sun. */
+export type BodyFrames = {
   rotation: RotationAxis
   iau: IauFrame
   /** System III / radio, when it is not the IAU cartographic W. */
@@ -98,6 +96,12 @@ export type Planet = {
   cloud?: PrimeMeridian
   /** Extra published rates that the UI does not select (e.g. Jupiter System II). */
   otherMeridians?: NamedMeridian[]
+}
+
+export type Planet = BodyFrames & {
+  id: PlanetId
+  name: string
+  color: string
   elements: KeplerianElements
   /* Unicode/Astrological symbol */
   symbol?: string
@@ -109,10 +113,31 @@ function omegaFromWDot(wDot: number): number {
 }
 
 /** Resolved body frame for a UI choice; missing extras use the IAU W. */
-export function frameFor(planet: Planet, choice: RotationFrameChoice): IauFrame {
+export function frameFor(body: BodyFrames, choice: RotationFrameChoice): IauFrame {
   const override =
-    choice === 'magnetic' ? planet.magnetic : choice === 'cloud' ? planet.cloud : undefined
-  return override ? { ...planet.iau, ...override } : planet.iau
+    choice === 'magnetic' ? body.magnetic : choice === 'cloud' ? body.cloud : undefined
+  return override ? { ...body.iau, ...override } : body.iau
+}
+
+/**
+ * The Sun's own spin, from the same IAU WGCCRE 2015 tables as the planets. W is
+ * the Carrington rate: a sidereal 25.38 d, chosen in the 1850s to match sunspots
+ * at about 16° latitude. The photosphere shears with latitude — roughly 24 d at
+ * the equator to 34 d near the poles — so this is one convention rather than a
+ * rigid-body period, and the Sun has no separate magnetic or cloud W.
+ */
+export const SUN: BodyFrames & { name: string; symbol: string } = {
+  name: 'Sun',
+  symbol: '☉', // Gold
+  rotation: { r: omegaFromWDot(14.1844), theta: 7.2517, phi: 345.7657 },
+  iau: {
+    ra0: 286.13,
+    raDot: 0,
+    dec0: 63.87,
+    decDot: 0,
+    w0: 84.176,
+    wDot: 14.1844,
+  },
 }
 
 export const PLANETS: Planet[] = [
