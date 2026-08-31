@@ -6,7 +6,7 @@ import {
   frameFor,
 } from '../src/data/planets.ts'
 import { MOONS } from '../src/data/moons.ts'
-import { PLANET_SYSTEM_BANDS } from '../src/data/orbitalBands.ts'
+import { PLANET_SYSTEM_BANDS, SOLAR_SYSTEM_BANDS } from '../src/data/orbitalBands.ts'
 import { PLANET_SYSTEMS } from '../src/data/planetSystems.ts'
 import {
   bodyFrame,
@@ -19,8 +19,8 @@ import {
   solarSystemAt,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
-import { resolveOrbitalBands } from '../src/lib/orbitalBands.ts'
-import { radialScale } from '../src/lib/radialScale.ts'
+import { resolveOrbitalBands, resolveSolarOrbitalBands } from '../src/lib/orbitalBands.ts'
+import { radialScale, solarOrbitOuterR } from '../src/lib/radialScale.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -726,7 +726,11 @@ const systems: { name: string; orbits: { id: string; a: number; e: number }[] }[
 
 let tightestGap = Number.POSITIVE_INFINITY
 for (const system of systems) {
-  const scale = radialScale(system.orbits, INNER_RING, OUTER_RING)
+  const orbitOuter =
+    system.name === 'solar'
+      ? solarOrbitOuterR(INNER_RING, OUTER_RING, system.orbits.length)
+      : OUTER_RING
+  const scale = radialScale(system.orbits, INNER_RING, orbitOuter)
   const first = system.orbits[0]
   const last = system.orbits[system.orbits.length - 1]
 
@@ -760,8 +764,8 @@ for (const system of systems) {
   }
 
   assert(
-    Math.abs(previousApoapsis - OUTER_RING) < 1e-9,
-    `${system.name}: the outermost apoapsis should land on the outer ring, got ${previousApoapsis.toFixed(4)}`,
+    Math.abs(previousApoapsis - orbitOuter) < 1e-9,
+    `${system.name}: the outermost apoapsis should land on ${orbitOuter.toFixed(4)}, got ${previousApoapsis.toFixed(4)}`,
   )
 }
 
@@ -796,6 +800,54 @@ assert(
 
 console.log(
   `ok  Saturn’s rings draw from ${ringInner.toFixed(2)} to ${ringOuter.toFixed(2)} of ${OUTER_RING} units, inside Mimas at ${mimasPeriapsis.toFixed(2)}`,
+)
+
+const solarOrbits = systems.find((system) => system.name === 'solar')!.orbits
+const solarOrbitOuter = solarOrbitOuterR(INNER_RING, OUTER_RING, solarOrbits.length)
+const solarScale = radialScale(solarOrbits, INNER_RING, solarOrbitOuter)
+const solarBands = resolveSolarOrbitalBands(SOLAR_SYSTEM_BANDS, solarScale, OUTER_RING)
+assert(solarBands.length === 2, `expected two solar bands, got ${solarBands.length}`)
+
+const asteroidBelt = solarBands.find((band) => band.id === 'asteroid-belt')
+const kuiperBelt = solarBands.find((band) => band.id === 'kuiper-belt')
+assert(asteroidBelt, 'asteroid belt missing from solar bands')
+assert(kuiperBelt, 'Kuiper belt missing from solar bands')
+
+const marsOrbit = solarOrbits.find((orbit) => orbit.id === 'mars')
+const jupiterOrbit = solarOrbits.find((orbit) => orbit.id === 'jupiter')
+const neptuneOrbit = solarOrbits.find((orbit) => orbit.id === 'neptune')
+assert(
+  marsOrbit && jupiterOrbit && neptuneOrbit,
+  'Mars, Jupiter, or Neptune missing from solar orbits',
+)
+
+const asteroidInner = asteroidBelt.radius - asteroidBelt.width / 2
+const asteroidOuter = asteroidBelt.radius + asteroidBelt.width / 2
+const marsApoapsis = solarScale(marsOrbit.a * (1 + marsOrbit.e))
+const jupiterPeriapsis = solarScale(jupiterOrbit.a * (1 - jupiterOrbit.e))
+assert(
+  asteroidBelt.width > 0 && asteroidInner > marsApoapsis && asteroidOuter < jupiterPeriapsis,
+  `asteroid belt should sit between Mars and Jupiter, got ${asteroidInner.toFixed(2)}–${asteroidOuter.toFixed(2)} against Mars apo ${marsApoapsis.toFixed(2)} and Jupiter peri ${jupiterPeriapsis.toFixed(2)}`,
+)
+
+const kuiperInner = kuiperBelt.radius - kuiperBelt.width / 2
+const kuiperOuter = kuiperBelt.radius + kuiperBelt.width / 2
+const neptuneMean = solarScale(neptuneOrbit.a)
+const neptuneApoapsis = solarScale(neptuneOrbit.a * (1 + neptuneOrbit.e))
+assert(
+  Math.abs(neptuneApoapsis - solarOrbitOuter) < 1e-9,
+  `Neptune’s apoapsis should land half a ring-step inside the frame, got ${neptuneApoapsis.toFixed(4)} against ${solarOrbitOuter.toFixed(4)}`,
+)
+assert(
+  kuiperBelt.width > 0 &&
+    Math.abs(kuiperOuter - OUTER_RING) < 1e-9 &&
+    kuiperInner <= neptuneMean + 0.5 &&
+    kuiperOuter > neptuneApoapsis,
+  `Kuiper belt should run from near Neptune’s mean pin to the frame, got ${kuiperInner.toFixed(2)}–${kuiperOuter.toFixed(2)} against Neptune mean ${neptuneMean.toFixed(2)} apo ${neptuneApoapsis.toFixed(2)}`,
+)
+
+console.log(
+  `ok  asteroid belt ${asteroidInner.toFixed(2)}–${asteroidOuter.toFixed(2)}; Kuiper belt ${kuiperInner.toFixed(2)}–${kuiperOuter.toFixed(2)} of ${OUTER_RING}, Neptune apo at ${neptuneApoapsis.toFixed(2)}`,
 )
 
 const neptuneScale = radialScale(

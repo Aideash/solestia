@@ -68,6 +68,17 @@ export function radialScale(
 }
 
 /**
+ * Solar orrery only: land the outermost apoapsis half a ring-step inside the
+ * frame so a clipped Kuiper belt has a little width past Neptune. Planet
+ * systems keep pinning that apoapsis to the frame. The step is the current
+ * spacing of mean-orbit pins against `frameR`, not the span after the shrink.
+ */
+export function solarOrbitOuterR(innerR: number, frameR: number, bodyCount: number): number {
+  if (bodyCount < 2) return frameR
+  return frameR - 0.5 * ((frameR - innerR) / (bodyCount - 1))
+}
+
+/**
  * Gives a compressed orbital scale a physical inner anchor, such as a
  * planet's surface at the edge of its center disc. Distances beyond the join
  * retain the original scale; distances inside it interpolate to the anchor.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { PLANET_SYSTEM_BANDS } from '../data/orbitalBands.ts'
+import { PLANET_SYSTEM_BANDS, SOLAR_SYSTEM_BANDS } from '../data/orbitalBands.ts'
 import { PLANET_SYSTEMS, planetSystemFor, type ViewPlane } from '../data/planetSystems.ts'
 import { SELECTION_NOTES, primeMeridianLabel } from '../data/selectionNotes.ts'
 import {
@@ -12,8 +12,8 @@ import {
   type SatelliteState,
   type SolarSystemSnapshot,
 } from '../lib/kepler.ts'
-import { resolveOrbitalBands } from '../lib/orbitalBands.ts'
-import { radialScale, type OrbitExtent } from '../lib/radialScale.ts'
+import { resolveOrbitalBands, resolveSolarOrbitalBands } from '../lib/orbitalBands.ts'
+import { radialScale, solarOrbitOuterR, type OrbitExtent } from '../lib/radialScale.ts'
 
 const props = defineProps<{
   snapshot: SolarSystemSnapshot | PlanetSystemSnapshot
@@ -393,19 +393,26 @@ function simpleRatio(value: number): string | null {
   return `${bestNum / g}:${bestDen / g}`
 }
 
-const distanceScale = computed(() => radialScale(bodies.value, innerR, outerR))
+const distanceScale = computed(() => {
+  const orbitOuter = isSatelliteSystem.value
+    ? outerR
+    : solarOrbitOuterR(innerR, outerR, bodies.value.length)
+  return radialScale(bodies.value, innerR, orbitOuter)
+})
 
 const orbitalBands = computed(() => {
   const system = planetSystem.value
-  if (!system) return []
-  return resolveOrbitalBands(
-    PLANET_SYSTEM_BANDS[system.id] ?? [],
-    bodies.value,
-    system.radiusKm,
-    innerR,
-    outerR,
-    sunR,
-  )
+  if (system) {
+    return resolveOrbitalBands(
+      PLANET_SYSTEM_BANDS[system.id] ?? [],
+      bodies.value,
+      system.radiusKm,
+      innerR,
+      outerR,
+      sunR,
+    )
+  }
+  return resolveSolarOrbitalBands(SOLAR_SYSTEM_BANDS, distanceScale.value, outerR)
 })
 
 const rings = computed(() => {

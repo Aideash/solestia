@@ -10,6 +10,21 @@ export type ResolvedBand = {
   width: number
 }
 
+function toResolvedBand(
+  band: OrbitalBand,
+  scale: (distance: number) => number,
+  clipOuter?: number,
+): ResolvedBand {
+  const inner = scale(band.innerDistanceKm / KM_PER_AU)
+  const outer = Math.min(scale(band.outerDistanceKm / KM_PER_AU), clipOuter ?? Infinity)
+  return {
+    id: band.id,
+    name: band.name,
+    radius: (inner + outer) / 2,
+    width: outer - inner,
+  }
+}
+
 /**
  * Screen geometry for the bands of one system. Orbits carry AU, as every
  * orrery body does, so the band's kilometres are converted before they meet
@@ -37,14 +52,18 @@ export function resolveOrbitalBands(
     innermost.a * (1 - innermost.e),
   )
 
-  return bands.map((band) => {
-    const inner = scale(band.innerDistanceKm / KM_PER_AU)
-    const outer = scale(band.outerDistanceKm / KM_PER_AU)
-    return {
-      id: band.id,
-      name: band.name,
-      radius: (inner + outer) / 2,
-      width: outer - inner,
-    }
-  })
+  return bands.map((band) => toResolvedBand(band, scale))
+}
+
+/**
+ * Heliocentric belts on the solar orrery. Uses the same compressed scale as
+ * the planets (no inward disc anchor) and clips the outer edge to the frame
+ * so a Kuiper belt that runs past Neptune's apoapsis still fits.
+ */
+export function resolveSolarOrbitalBands(
+  bands: readonly OrbitalBand[],
+  scale: (distance: number) => number,
+  clipOuter: number,
+): ResolvedBand[] {
+  return bands.map((band) => toResolvedBand(band, scale, clipOuter))
 }
