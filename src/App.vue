@@ -14,7 +14,10 @@ provide(epochKey, { viewed, live, selectedId })
 
 const route = useRoute()
 const router = useRouter()
-const isJupiter = computed(() => route.name === 'jupiter')
+const subtitle = computed(() =>
+  typeof route.meta.subtitle === 'string' ? route.meta.subtitle : null,
+)
+const isPlanetSystem = computed(() => route.name !== 'solar')
 
 function startLiveClock() {
   window.clearInterval(timer)
@@ -60,7 +63,7 @@ function onAppKeydown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
-  if (isJupiter.value) {
+  if (isPlanetSystem.value) {
     void router.push({ name: 'solar' })
     event.preventDefault()
   }
@@ -82,7 +85,7 @@ onUnmounted(() => {
     <header class="app__header">
       <h1>
         <RouterLink class="app__title" to="/">Solestia</RouterLink>
-        <span v-if="isJupiter" class="app__subtitle">Jupiter</span>
+        <span v-if="subtitle" class="app__subtitle">{{ subtitle }}</span>
       </h1>
       <EpochField :at="viewed" :live="live" @change="setViewed" @live="goLive" />
     </header>

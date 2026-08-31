@@ -12,6 +12,8 @@ import {
   eccentricityWobble,
   equatorialToEcliptic,
   jupiterSystemAt,
+  planetSystemAt,
+  satelliteIauFrame,
   solarSystemAt,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
@@ -342,8 +344,8 @@ console.log(
 )
 
 const j2000 = jupiterSystemAt(new Date('2000-01-01T12:00:00Z'))
-assert(j2000.moons.length === 4, `expected 4 Galilean moons, got ${j2000.moons.length}`)
-const io = j2000.moons.find((m) => m.id === 'io')
+assert(j2000.satellites.length === 4, `expected 4 Galilean moons, got ${j2000.satellites.length}`)
+const io = j2000.satellites.find((m) => m.id === 'io')
 assert(io, 'Io missing from Jupiter system')
 assert(io.aKm === 421800, `Io a should be 421800 km, got ${io.aKm}`)
 assert(
@@ -351,7 +353,7 @@ assert(
   `Io mean anomaly at J2000 should be ~330.9°, got ${deg(io.meanAnomaly).toFixed(2)}°`,
 )
 
-for (const moon of j2000.moons) {
+for (const moon of j2000.satellites) {
   assert(
     Number.isFinite(moon.solarDayDays) && moon.solarDayDays < moon.siderealOrbitDays * 1.02,
     `${moon.name} solar day should be finite and close to its month, got ${moon.solarDayDays} vs orbit ${moon.siderealOrbitDays}`,
@@ -370,8 +372,8 @@ for (const moon of j2000.moons) {
     `${moon.name} should be synchronous, spin–orbit ratio ${moon.siderealOrbitDays / moon.siderealRotationDays}`,
   )
   assert(
-    moon.jupiterDayDays === Number.POSITIVE_INFINITY,
-    `${moon.name} is locked, so its Jupiter day should be infinite, got ${moon.jupiterDayDays}`,
+    moon.parentDayDays === Number.POSITIVE_INFINITY,
+    `${moon.name} is locked, so its parent day should be infinite, got ${moon.parentDayDays}`,
   )
 }
 
@@ -383,7 +385,7 @@ const SIDEREAL_MONTHS: Record<string, number> = {
   callisto: 16.689018,
 }
 
-for (const moon of j2000.moons) {
+for (const moon of j2000.satellites) {
   const expected = SIDEREAL_MONTHS[moon.id]
   assert(
     Math.abs(moon.siderealOrbitDays - expected) < 1e-3,
@@ -395,13 +397,32 @@ for (const moon of j2000.moons) {
 // with the wrong sign leaves the epoch untouched and walks the sub-Jupiter point
 // right around the moon within a year.
 const late = jupiterSystemAt(new Date('2049-01-01T12:00:00Z'))
-for (const moon of late.moons) {
+for (const moon of late.satellites) {
   const inward = deg(wrapRadSigned(moon.facing.longitude - moon.longitude - Math.PI))
   assert(
     Math.abs(inward) < 6,
     `${moon.name} prime meridian should still face Jupiter in 2049, off by ${inward.toFixed(1)}°`,
   )
 }
+
+const earthSystem = planetSystemAt(new Date('2000-01-01T12:00:00Z'), 'earth')
+assert(earthSystem.satellites.length === 1, 'Earth system should contain one moon')
+const moon = earthSystem.satellites[0]
+assert(moon?.id === 'moon', 'Moon missing from Earth system')
+assert(moon.aKm === 384400, `Moon a should be 384400 km, got ${moon.aKm}`)
+assert(
+  Math.abs(moon.siderealOrbitDays - 27.322) < 0.001,
+  `Moon sidereal month should be ~27.322 d, got ${moon.siderealOrbitDays}`,
+)
+assert(
+  moon.parentDayDays === Number.POSITIVE_INFINITY,
+  `Moon is locked, so its Earth day should be infinite, got ${moon.parentDayDays}`,
+)
+const moonInward = deg(wrapRadSigned(moon.facing.longitude - moon.longitude - Math.PI))
+assert(
+  Math.abs(moonInward) < 6,
+  `Moon prime meridian should face Earth (inward), off by ${moonInward.toFixed(1)}°`,
+)
 
 // First order the wobble is 2e; Earth's is the 7.7 min eccentricity term of the
 // equation of time.
@@ -413,7 +434,8 @@ assert(
 )
 
 for (const moon of MOONS) {
-  const pole = equatorialToEcliptic(bodyFrame(moon.iau, 0).pole)
+  let pole = equatorialToEcliptic(bodyFrame(satelliteIauFrame(moon, 0), 0).pole)
+  if (moon.iau.wDot < 0) pole = { x: -pole.x, y: -pole.y, z: -pole.z }
   const theta = deg(Math.acos(pole.z))
   const phi = (deg(Math.atan2(pole.y, pole.x)) + 360) % 360
   assert(
@@ -428,8 +450,103 @@ for (const moon of MOONS) {
 }
 
 console.log(
-  `ok  Galilean moons at J2000: Io ν ${deg(io.trueAnomaly).toFixed(1)}°, sidereal month ${io.siderealOrbitDays.toFixed(6)} d, solar day ${io.solarDayDays.toFixed(4)} d, Jupiter day ${io.jupiterDayDays}`,
+  `ok  Galilean moons at J2000: Io ν ${deg(io.trueAnomaly).toFixed(1)}°, sidereal month ${io.siderealOrbitDays.toFixed(6)} d, solar day ${io.solarDayDays.toFixed(4)} d, Jupiter day ${io.parentDayDays}`,
 )
 console.log(
+  `ok  Earth–Moon system at J2000: month ${moon.siderealOrbitDays.toFixed(3)} d, Earth-facing offset ${moonInward.toFixed(1)}°`,
+)
+const uranusJ2000 = planetSystemAt(new Date('2000-01-01T12:00:00Z'), 'uranus')
+assert(
+  uranusJ2000.satellites.length === 5,
+  `expected 5 major Uranian moons, got ${uranusJ2000.satellites.length}`,
+)
+const URANIAN_SIDEREAL_MONTHS: Record<string, number> = {
+  miranda: 1.413479,
+  ariel: 2.520379,
+  umbriel: 4.144177,
+  titania: 8.705869,
+  oberon: 13.463237,
+}
+const uranusLate = planetSystemAt(new Date('2049-01-01T12:00:00Z'), 'uranus')
+for (const moon of uranusJ2000.satellites) {
+  const expected = URANIAN_SIDEREAL_MONTHS[moon.id]
+  assert(expected, `${moon.name} missing from Uranian sidereal-month table`)
+  assert(
+    Math.abs(moon.siderealOrbitDays - expected) < 1e-6,
+    `${moon.name} sidereal month should be ~${expected} d, got ${moon.siderealOrbitDays}`,
+  )
+  assert(
+    moon.retrograde,
+    `${moon.name} should spin retrograde with Uranus, theta ${deg(moon.obliquity).toFixed(2)}°`,
+  )
+  assert(
+    Math.abs(moon.siderealOrbitDays / moon.siderealRotationDays - 1) < 1e-4,
+    `${moon.name} should be synchronous, spin–orbit ratio ${moon.siderealOrbitDays / moon.siderealRotationDays}`,
+  )
+  assert(
+    moon.parentDayDays === Number.POSITIVE_INFINITY,
+    `${moon.name} is locked, so its Uranus day should be infinite, got ${moon.parentDayDays}`,
+  )
+  // These orbits stand nearly on end to the ecliptic, so the 2-D longitude
+  // inward test used for the Galileans is not meaningful. The 3-D lock is
+  // Uranus standing on the IAU prime meridian.
+  assert(
+    fractionGap(moon.parentFraction, 0.5) < 0.07,
+    `${moon.name} should keep Uranus on its prime meridian, got parent fraction ${moon.parentFraction.toFixed(3)}`,
+  )
+}
+for (const moon of uranusLate.satellites) {
+  assert(
+    fractionGap(moon.parentFraction, 0.5) < 0.02,
+    `${moon.name} should still keep Uranus on its prime meridian in 2049, got parent fraction ${moon.parentFraction.toFixed(3)}`,
+  )
+}
+
+const arielEq = uranusJ2000.satellites.find((m) => m.id === 'ariel')
+assert(arielEq, 'Ariel missing from Uranus system')
+const arielTrueInEquator = wrapRadSigned(
+  arielEq.equatorLongitude - arielEq.equatorPeriapsis + arielEq.trueAnomaly,
+)
+assert(
+  Math.abs(arielTrueInEquator) < 0.05,
+  `Ariel’s equatorial azimuth from periapsis should be −ν (IAU north), off by ${deg(arielTrueInEquator).toFixed(2)}°`,
+)
+assert(
+  arielEq.equatorFacing.inPlane > 0.85,
+  `Ariel’s prime meridian should lie in Uranus’s equator, inPlane ${arielEq.equatorFacing.inPlane.toFixed(3)}`,
+)
+const arielQuarterMs = arielEq.siderealOrbitDays * 0.25 * 86_400_000
+const arielLater = planetSystemAt(
+  new Date(new Date('2000-01-01T12:00:00Z').getTime() + arielQuarterMs),
+  'uranus',
+).satellites.find((m) => m.id === 'ariel')
+assert(arielLater, 'Ariel missing a quarter-orbit later')
+const arielStep = Math.abs(wrapRadSigned(arielLater.equatorLongitude - arielEq.equatorLongitude))
+assert(
+  Math.abs(arielStep - Math.PI / 2) < 0.2,
+  `Ariel should advance ~90° in Uranus’s equator in a quarter month, moved ${deg(arielStep).toFixed(1)}°`,
+)
+
+const uranusEquinox = planetSystemAt(new Date('2007-12-07T12:00:00Z'), 'uranus')
+const uranusSolstice = planetSystemAt(new Date('1986-01-24T12:00:00Z'), 'uranus')
+assert(
+  uranusEquinox.sunEquator.inPlane > uranusSolstice.sunEquator.inPlane,
+  `Sun should lie closer to Uranus’s equator at the 2007 equinox (inPlane ${uranusEquinox.sunEquator.inPlane.toFixed(2)}) than at the 1986 solstice (${uranusSolstice.sunEquator.inPlane.toFixed(2)})`,
+)
+assert(
+  uranusSolstice.sunEquator.inPlane < 0.45,
+  `Sun should be near a Uranian pole at the 1986 solstice, inPlane ${uranusSolstice.sunEquator.inPlane.toFixed(2)}`,
+)
+assert(
+  uranusEquinox.sunEquator.inPlane > 0.7,
+  `Sun should sit on Uranus’s equator at the 2007 equinox, inPlane ${uranusEquinox.sunEquator.inPlane.toFixed(2)}`,
+)
+
+console.log(
   `ok  eccentricity wobble: Io libration ±${deg(eccentricityWobble(io.e)).toFixed(3)}°, Earth equation of time ±${earthWobble.toFixed(3)}°`,
+)
+const miranda = uranusJ2000.satellites.find((m) => m.id === 'miranda')
+assert(miranda, 'Miranda missing from Uranus system')
+console.log(
+  `ok  Uranian moons at J2000: Miranda ν ${deg(miranda.trueAnomaly).toFixed(1)}°, sidereal month ${miranda.siderealOrbitDays.toFixed(6)} d, Uranus day ${miranda.parentDayDays}`,
 )

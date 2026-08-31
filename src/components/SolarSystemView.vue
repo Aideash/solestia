@@ -1,41 +1,48 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { PLANET_SYSTEMS, planetSystemFor, type ViewPlane } from '../data/planetSystems.ts'
 import { SELECTION_NOTES } from '../data/selectionNotes.ts'
 import {
-  JUPITER_RADIUS_KM,
   eccentricityWobble,
   orbitPoint,
   wrapRad,
-  type JupiterSystemSnapshot,
+  type PlanetSystemSnapshot,
   type PlanetState,
+  type SatelliteState,
   type SolarSystemSnapshot,
 } from '../lib/kepler.ts'
 
 const props = defineProps<{
-  snapshot: SolarSystemSnapshot | JupiterSystemSnapshot
-  system?: 'solar' | 'jupiter'
+  snapshot: SolarSystemSnapshot | PlanetSystemSnapshot
   selectedPlanet?: string | null
+  viewPlane?: ViewPlane
   live?: boolean
 }>()
 
 const emit = defineEmits<{
   select: [id: string]
-  open: []
+  open: [id: string]
 }>()
 
-const system = computed(() => props.system ?? 'solar')
-const isJupiter = computed(() => system.value === 'jupiter')
-
-function isJupiterSnapshot(
-  snapshot: SolarSystemSnapshot | JupiterSystemSnapshot,
-): snapshot is JupiterSystemSnapshot {
-  return 'moons' in snapshot
+function isPlanetSystemSnapshot(
+  snapshot: SolarSystemSnapshot | PlanetSystemSnapshot,
+): snapshot is PlanetSystemSnapshot {
+  return 'satellites' in snapshot
 }
 
-type OrreryBody = PlanetState | JupiterSystemSnapshot['moons'][number]
+type OrreryBody = PlanetState | SatelliteState
 
 const bodies = computed((): OrreryBody[] =>
-  isJupiterSnapshot(props.snapshot) ? props.snapshot.moons : props.snapshot.planets,
+  isPlanetSystemSnapshot(props.snapshot) ? props.snapshot.satellites : props.snapshot.planets,
+)
+const isSatelliteSystem = computed(() => isPlanetSystemSnapshot(props.snapshot))
+const planetSystem = computed(() =>
+  isPlanetSystemSnapshot(props.snapshot) ? PLANET_SYSTEMS[props.snapshot.system] : null,
+)
+const useEquator = computed(
+  () =>
+    isSatelliteSystem.value &&
+    (props.viewPlane ?? planetSystem.value?.defaultViewPlane) === 'equator',
 )
 
 const size = 100
@@ -85,24 +92,24 @@ function formatFineDeg(rad: number): string {
 const JULIAN_YEAR_DAYS = 365.25
 const HOURS_PER_DAY = 24
 
-type RotationKind = 'sidereal' | 'solar' | 'jovian'
+type RotationKind = 'sidereal' | 'solar' | 'parent'
 type OrbitUnit = 'earth' | 'local'
 
-/** A Jupiter day needs a Jupiter to watch, so it is offered only in that system. */
+/** A parent day is meaningful only for a natural satellite. */
 const ROTATION_KINDS_SOLAR: RotationKind[] = ['sidereal', 'solar']
-const ROTATION_KINDS_JUPITER: RotationKind[] = ['sidereal', 'solar', 'jovian']
+const ROTATION_KINDS_SATELLITE: RotationKind[] = ['sidereal', 'solar', 'parent']
 
-const ROTATION_KIND_WORDS: Record<RotationKind, string> = {
+const rotationKindWords = computed<Record<RotationKind, string>>(() => ({
   sidereal: 'a sidereal day, one spin against the stars',
   solar: 'a solar day, noon to noon',
-  jovian: 'a Jupiter day, until Jupiter stands on the same meridian again',
-}
+  parent: `a ${planetSystem.value?.name ?? 'parent'} day, until the parent stands on the same meridian again`,
+}))
 
 const chosenRotationKind = ref<RotationKind>('sidereal')
 const orbitUnit = ref<OrbitUnit>('earth')
 
 const rotationKinds = computed(() =>
-  isJupiter.value ? ROTATION_KINDS_JUPITER : ROTATION_KINDS_SOLAR,
+  isSatelliteSystem.value ? ROTATION_KINDS_SATELLITE : ROTATION_KINDS_SOLAR,
 )
 
 const rotationKind = computed(() =>
@@ -157,7 +164,7 @@ const COLUMN_CATALOG_SOLAR: ColumnMeta[] = [
   { id: 'Q', heading: 'Q', label: 'Aphelion distance (Q)', onByDefault: false },
 ]
 
-const COLUMN_CATALOG_JUPITER: ColumnMeta[] = [
+const COLUMN_CATALOG_SATELLITE: ColumnMeta[] = [
   { id: 'e', heading: 'e', label: 'Eccentricity (e)', onByDefault: true },
   { id: 'obliquity', heading: 'ε', label: 'Obliquity (ε)', onByDefault: false },
   { id: 'rotation', heading: 'P_rot', label: 'Rotation period', onByDefault: true },
@@ -171,7 +178,7 @@ const COLUMN_CATALOG_JUPITER: ColumnMeta[] = [
     onByDefault: false,
   },
   { id: 'day', heading: 'rot', label: 'Rotation progress', onByDefault: false },
-  { id: 'libration', heading: 'lib', label: 'Libration of Jupiter (lib)', onByDefault: false },
+  { id: 'libration', heading: 'lib', label: 'Optical libration (lib)', onByDefault: false },
   { id: 'w0', heading: 'W₀', label: 'Prime meridian at J2000 (W₀)', onByDefault: false },
   { id: 'resonance', heading: 'P_orb/P_rot', label: 'Spin–orbit ratio', onByDefault: false },
   { id: 'a', heading: 'a', label: 'Mean distance (a)', onByDefault: false },
@@ -180,26 +187,27 @@ const COLUMN_CATALOG_JUPITER: ColumnMeta[] = [
 ]
 
 const COLUMN_CATALOG = computed(() =>
-  isJupiter.value ? COLUMN_CATALOG_JUPITER : COLUMN_CATALOG_SOLAR,
+  isSatelliteSystem.value ? COLUMN_CATALOG_SATELLITE : COLUMN_CATALOG_SOLAR,
 )
 
 const DEFAULT_COLUMNS_SOLAR = COLUMN_CATALOG_SOLAR.filter((col) => col.onByDefault).map(
   (col) => col.id,
 )
-const DEFAULT_COLUMNS_JUPITER: ColumnId[] = ['e', 'rotation', 'orbit']
+const DEFAULT_COLUMNS_SATELLITE: ColumnId[] = ['e', 'rotation', 'orbit']
 const COLUMNS_STORAGE_KEY_SOLAR = 'solestia.readoutColumns'
-const COLUMNS_STORAGE_KEY_JUPITER = 'solestia.readoutColumns.jupiter'
 
 function isColumnId(value: unknown): value is ColumnId {
   return typeof value === 'string' && (COLUMN_IDS as readonly string[]).includes(value)
 }
 
 function defaultColumns(): ColumnId[] {
-  return isJupiter.value ? DEFAULT_COLUMNS_JUPITER : DEFAULT_COLUMNS_SOLAR
+  return isSatelliteSystem.value ? DEFAULT_COLUMNS_SATELLITE : DEFAULT_COLUMNS_SOLAR
 }
 
 function columnsStorageKey(): string {
-  return isJupiter.value ? COLUMNS_STORAGE_KEY_JUPITER : COLUMNS_STORAGE_KEY_SOLAR
+  return planetSystem.value
+    ? `solestia.readoutColumns.${planetSystem.value.id}`
+    : COLUMNS_STORAGE_KEY_SOLAR
 }
 
 function loadColumns(): Set<ColumnId> {
@@ -305,8 +313,8 @@ function toggleRotationKind() {
 
 const rotationKindAria = computed(
   () =>
-    `Rotation period as ${ROTATION_KIND_WORDS[rotationKind.value]}. ` +
-    `Click to show ${ROTATION_KIND_WORDS[nextRotationKind()]}.`,
+    `Rotation period as ${rotationKindWords.value[rotationKind.value]}. ` +
+    `Click to show ${rotationKindWords.value[nextRotationKind()]}.`,
 )
 
 function toggleOrbitUnit() {
@@ -363,35 +371,55 @@ function simpleRatio(value: number): string | null {
 
 const rings = computed(() => {
   const earthPerihelionLongitude = props.snapshot.earthPerihelionLongitude
-  const frameLabel = isJupiterSnapshot(props.snapshot) ? 'IAU' : props.snapshot.rotationFrame
-  const last = Math.max(bodies.value.length - 1, 1)
+  const equatorOrigin = isPlanetSystemSnapshot(props.snapshot)
+    ? props.snapshot.equatorOrigin
+    : earthPerihelionLongitude
+  const origin = useEquator.value ? equatorOrigin : earthPerihelionLongitude
+  const frameLabel = isPlanetSystemSnapshot(props.snapshot) ? 'IAU' : props.snapshot.rotationFrame
+  const planeWord = useEquator.value ? 'equatorial' : 'ecliptic'
+  const count = bodies.value.length
   return bodies.value.map((planet, i) => {
-    const r = innerR + (i / last) * (outerR - innerR)
-    const body = orbitPoint(cx, cy, r, planet.offsetFromEarthPerihelion)
-    const periOffset = wrapRad(planet.perihelionLongitude - earthPerihelionLongitude)
+    // A lone body would otherwise sit on the innermost ring, wasting the frame.
+    const spread = count > 1 ? i / (count - 1) : 1
+    const r = innerR + spread * (outerR - innerR)
+    const isMoon = 'equatorLongitude' in planet
+    const bodyOffset =
+      useEquator.value && isMoon ? planet.equatorLongitude : planet.offsetFromEarthPerihelion
+    const body = orbitPoint(
+      cx,
+      cy,
+      r,
+      useEquator.value && isMoon ? wrapRad(bodyOffset - origin) : bodyOffset,
+    )
+    const periAbs =
+      useEquator.value && isMoon ? planet.equatorPeriapsis : planet.perihelionLongitude
+    const periOffset = wrapRad(
+      useEquator.value && isMoon ? periAbs - origin : periAbs - earthPerihelionLongitude,
+    )
     const periTick = orbitPoint(cx, cy, r, periOffset)
     const periInner = orbitPoint(cx, cy, r - 1.4, periOffset)
 
     const bodyR = planet.id === 'earth' ? 1.7 : 1.45
-    const facingOffset = wrapRad(planet.facing.longitude - earthPerihelionLongitude)
+    const facing = useEquator.value && isMoon ? planet.equatorFacing : planet.facing
+    const facingOffset = wrapRad(facing.longitude - origin)
     const facingReach = bodyR + facingGap
     const facingFrom = orbitPoint(body.x, body.y, facingReach, facingOffset)
     const facingTo = orbitPoint(
       body.x,
       body.y,
-      facingReach + facingMin + (facingMax - facingMin) * planet.facing.inPlane,
+      facingReach + facingMin + (facingMax - facingMin) * facing.inPlane,
       facingOffset,
     )
     const label =
       `${planet.name} — ${frameLabel} prime meridian faces ` +
-      `${formatDeg(planet.facing.longitude)} ecliptic longitude`
+      `${formatDeg(facing.longitude)} ${planeWord} longitude`
 
     return { planet, r, bodyR, body, periTick, periInner, facingFrom, facingTo, label }
   })
 })
 
 const sunMark = computed(() => {
-  if (isJupiterSnapshot(props.snapshot)) return null
+  if (isPlanetSystemSnapshot(props.snapshot)) return null
   const { sun, earthPerihelionLongitude } = props.snapshot
   const offset = wrapRad(sun.facing.longitude - earthPerihelionLongitude)
   const reach = sunR + sunFacingGap
@@ -409,25 +437,33 @@ const sunMark = computed(() => {
   return { from, to, label }
 })
 
-const jupiterMark = computed(() => {
-  if (!isJupiterSnapshot(props.snapshot)) return null
-  const { jupiter, earthPerihelionLongitude } = props.snapshot
-  const offset = wrapRad(jupiter.facing.longitude - earthPerihelionLongitude)
+const parentMark = computed(() => {
+  if (!isPlanetSystemSnapshot(props.snapshot)) return null
+  const { parent, earthPerihelionLongitude, equatorOrigin, parentEquatorFacing } = props.snapshot
+  const facing = useEquator.value ? parentEquatorFacing : parent.facing
+  const origin = useEquator.value ? equatorOrigin : earthPerihelionLongitude
+  const offset = wrapRad(facing.longitude - origin)
   const reach = sunR + sunFacingGap
   const from = orbitPoint(cx, cy, reach, offset)
   const to = orbitPoint(
     cx,
     cy,
-    reach + sunFacingMin + (sunFacingMax - sunFacingMin) * jupiter.facing.inPlane,
+    reach + sunFacingMin + (sunFacingMax - sunFacingMin) * facing.inPlane,
     offset,
   )
-  const label = `Jupiter — IAU prime meridian faces ${formatDeg(jupiter.facing.longitude)} ecliptic longitude`
-  return { from, to, label, color: jupiter.color }
+  const planeWord = useEquator.value ? 'equatorial' : 'ecliptic'
+  const label = `${parent.name} — IAU prime meridian faces ${formatDeg(facing.longitude)} ${planeWord} longitude`
+  return { from, to, label, color: parent.color }
 })
 
 const sunTick = computed(() => {
-  if (!isJupiterSnapshot(props.snapshot)) return null
-  const offset = props.snapshot.sunOffsetFromEarthPerihelion
+  if (!isPlanetSystemSnapshot(props.snapshot)) return null
+  const origin = useEquator.value
+    ? props.snapshot.equatorOrigin
+    : props.snapshot.earthPerihelionLongitude
+  const offset = useEquator.value
+    ? wrapRad(props.snapshot.sunEquator.longitude - origin)
+    : props.snapshot.sunOffsetFromEarthPerihelion
   const inner = orbitPoint(cx, cy, innerR - 2, offset)
   const outer = orbitPoint(cx, cy, outerR + 2.2, offset)
   const label = orbitPoint(cx, cy, outerR + 2.2, offset)
@@ -435,7 +471,7 @@ const sunTick = computed(() => {
 })
 
 const upTick = computed(() => {
-  if (!isJupiter.value) return null
+  if (!isSatelliteSystem.value) return null
   return {
     inner: orbitPoint(cx, cy, outerR + 0.4, 0),
     outer: orbitPoint(cx, cy, outerR + 1.6, 0),
@@ -513,18 +549,22 @@ function onBodyClick(id: string, event: MouseEvent) {
 }
 
 function onBodyDblclick(id: string) {
-  if (!isJupiter.value && id === 'jupiter') emit('open')
+  if (!isSatelliteSystem.value && planetSystemFor(id as PlanetState['id'])) emit('open', id)
+}
+
+function onParentDblclick() {
+  emit('select', 'sun')
 }
 
 function formatDistance(
   planet: OrreryBody,
   factor: number,
 ): { primary: string; secondary: string } {
-  if (isJupiter.value && 'aKm' in planet) {
+  if (planetSystem.value && 'aKm' in planet) {
     const km = planet.aKm * factor
     return {
       primary: formatQuantity(km, 'km'),
-      secondary: formatQuantity(km / JUPITER_RADIUS_KM, 'R_J'),
+      secondary: formatQuantity(km / planetSystem.value.radiusKm, planetSystem.value.radiusSymbol),
     }
   }
   const au = planet.a * factor
@@ -534,16 +574,16 @@ function formatDistance(
 const rows = computed(() =>
   bodies.value.map((planet) => {
     const kind = rotationKind.value
-    const jupiterDay = 'jupiterDayDays' in planet ? planet.jupiterDayDays : Number.POSITIVE_INFINITY
-    const locked = kind === 'jovian' && !Number.isFinite(jupiterDay)
+    const parentDay = 'parentDayDays' in planet ? planet.parentDayDays : Number.POSITIVE_INFINITY
+    const locked = kind === 'parent' && !Number.isFinite(parentDay)
     const rotationDays =
       kind === 'sidereal'
         ? planet.siderealRotationDays
         : kind === 'solar'
           ? planet.solarDayDays
-          : jupiterDay
+          : parentDay
     const localOrbitDays = planet.siderealOrbitDays / rotationDays
-    const localUnit = kind === 'sidereal' ? 'sid. d' : kind === 'solar' ? 'sol. d' : 'jov. d'
+    const localUnit = kind === 'sidereal' ? 'sid. d' : kind === 'solar' ? 'sol. d' : 'parent d'
     const spinOrbit = planet.siderealOrbitDays / planet.siderealRotationDays
     const wobble = eccentricityWobble(planet.e)
     const wobbleTime = formatDuration((wobble / (Math.PI * 2)) * planet.solarDayDays)
@@ -558,8 +598,8 @@ const rows = computed(() =>
             primary: '∞',
             secondary: '1:1 lock',
             spin:
-              `Jupiter never rises or sets here: ${planet.name} spins once per orbit, so Jupiter ` +
-              `hangs over the sub-Jupiter point, swinging ±${formatFineDeg(wobble)} once per ` +
+              `${planetSystem.value?.name ?? 'The parent'} never rises or sets here: ${planet.name} spins once per orbit, so it ` +
+              `hangs over the sub-parent point, swinging ±${formatFineDeg(wobble)} once per ` +
               `${formatQuantity(planet.siderealOrbitDays, 'd')} orbit. The far side never sees it.`,
           }
         : {
@@ -573,7 +613,7 @@ const rows = computed(() =>
         orbitUnit.value === 'earth'
           ? {
               primary: formatQuantity(planet.siderealOrbitDays, 'd'),
-              secondary: isJupiter.value
+              secondary: isSatelliteSystem.value
                 ? ''
                 : formatQuantity(planet.siderealOrbitDays / JULIAN_YEAR_DAYS, 'yr'),
               note: '',
@@ -582,19 +622,19 @@ const rows = computed(() =>
             ? {
                 primary: '—',
                 secondary: '',
-                note: 'With Jupiter fixed in the sky there are no Jupiter days to count. One orbit is exactly one rotation.',
+                note: `With ${planetSystem.value?.name ?? 'the parent'} fixed in the sky there are no parent days to count. One orbit is exactly one rotation.`,
               }
             : {
                 primary: formatQuantity(localOrbitDays, localUnit),
                 secondary: '',
                 note: '',
               },
-      libration: isJupiter.value
+      libration: isSatelliteSystem.value
         ? {
             primary: `±${formatFineDeg(wobble)}`,
             secondary: formatQuantity(planet.siderealOrbitDays, 'd'),
             note:
-              `Jupiter swings ±${formatFineDeg(wobble)} east and west of the sub-Jupiter point, ` +
+              `${planetSystem.value?.name ?? 'The parent'} swings ±${formatFineDeg(wobble)} east and west of the sub-parent point, ` +
               `once per orbit. The spin is uniform but an eccentric orbit is not, which is ` +
               `optical libration — the same effect that shows Earth a little around each limb of the Moon.`,
           }
@@ -655,15 +695,15 @@ const rows = computed(() =>
             <p id="orrery-settings-title" class="orrery__settings-title">Display</p>
             <label class="orrery__settings-item">
               <input v-model="showFacing" type="checkbox" />
-              {{ isJupiter ? 'Moon facing' : 'Planet facing' }}
+              {{ isSatelliteSystem ? 'Moon facing' : 'Planet facing' }}
             </label>
             <label class="orrery__settings-item">
               <input v-model="showSunFacing" type="checkbox" />
-              {{ isJupiter ? 'Jupiter facing' : 'Sun facing' }}
+              {{ isSatelliteSystem ? `${planetSystem?.name} facing` : 'Sun facing' }}
             </label>
             <label class="orrery__settings-item">
               <input v-model="showPerihelion" type="checkbox" />
-              {{ isJupiter ? 'Perijove' : 'Perihelion' }}
+              {{ isSatelliteSystem ? planetSystem?.periapsisName : 'Perihelion' }}
             </label>
             <label class="orrery__settings-item">
               <input v-model="showNotes" type="checkbox" />
@@ -677,17 +717,19 @@ const rows = computed(() =>
         :viewBox="viewBox"
         role="img"
         :aria-label="
-          isJupiter
-            ? 'Jupiter system orrery with evenly spaced Galilean orbits, Earth perihelion at the top'
+          isSatelliteSystem
+            ? useEquator
+              ? `${planetSystem?.name} system orrery in the parent equator, Earth perihelion projected at the top`
+              : `${planetSystem?.name} system orrery with evenly spaced satellite orbits, Earth perihelion at the top`
             : 'Solar system orrery with evenly spaced orbits, Earth perihelion at the top'
         "
       >
         <title>
           {{
-            isJupiter
+            isSatelliteSystem
               ? live
-                ? 'Jupiter system now'
-                : `Jupiter system at ${snapshot.at.toISOString()}`
+                ? `${planetSystem?.name} system now`
+                : `${planetSystem?.name} system at ${snapshot.at.toISOString()}`
               : live
                 ? 'Solar system now'
                 : `Solar system at ${snapshot.at.toISOString()}`
@@ -695,13 +737,15 @@ const rows = computed(() =>
         </title>
         <desc>
           {{
-            isJupiter
-              ? 'Concentric rings for Io through Callisto. Earth’s perihelion is at the top. The Sun is marked at the anti-Jupiter direction. Each moon’s whisker shows where its IAU prime meridian points; longitude 0 faces Jupiter.'
+            isSatelliteSystem
+              ? useEquator
+                ? `Concentric rings for ${planetSystem?.orbitGroupName}, viewed in ${planetSystem?.name}’s equator. Earth’s perihelion is projected at the top. The Sun’s azimuth is seasonal — it races near solstice when the Sun is almost over a pole. Each moon’s whisker shows where its IAU prime meridian points; longitude 0 faces ${planetSystem?.name}.`
+                : `Concentric rings for ${planetSystem?.orbitGroupName}. Earth’s perihelion is at the top. The Sun is marked at the anti-${planetSystem?.name} direction. Each moon’s whisker shows where its IAU prime meridian points; longitude 0 faces ${planetSystem?.name}.`
               : 'Concentric rings for Mercury through Neptune. Earth’s perihelion is at the top, aphelion at the bottom. Planets sit at their heliocentric longitude for the selected time, each with a short whisker showing where its prime meridian points in the selected longitude system. The Sun at the center carries the same whisker for its Carrington prime meridian.'
           }}
         </desc>
         <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
-        <template v-if="!isJupiter">
+        <template v-if="!isSatelliteSystem">
           <text class="axis-label" :x="perihelionMark.x" :y="perihelionMark.y" text-anchor="middle">
             ⊕
             <tspan baseline-shift="sub" font-size="0.75em">peri</tspan>
@@ -727,7 +771,13 @@ const rows = computed(() =>
             :x2="upTick.outer.x"
             :y2="upTick.outer.y"
           >
-            <title>Earth perihelion direction (diagram up)</title>
+            <title>
+              {{
+                useEquator
+                  ? 'Earth perihelion projected into the parent equator (diagram up)'
+                  : 'Earth perihelion direction (diagram up)'
+              }}
+            </title>
           </line>
           <g v-if="sunTick">
             <line
@@ -739,7 +789,13 @@ const rows = computed(() =>
             />
             <text class="axis-label" :x="sunTick.label.x" :y="sunTick.label.y" text-anchor="middle">
               ☉
-              <title>Direction of the Sun from Jupiter</title>
+              <title>
+                {{
+                  useEquator
+                    ? `Sun from ${planetSystem?.name}, azimuth in the parent equator`
+                    : `Direction of the Sun from ${planetSystem?.name}`
+                }}
+              </title>
             </text>
           </g>
         </template>
@@ -789,17 +845,17 @@ const rows = computed(() =>
             :y2="sunMark.to.y"
           />
         </g>
-        <g v-else-if="jupiterMark" class="sun-mark">
-          <title>{{ jupiterMark.label }}</title>
-          <circle class="planet-center" :cx="cx" :cy="cy" :r="sunR" :fill="jupiterMark.color" />
+        <g v-else-if="parentMark" class="sun-mark" @dblclick="onParentDblclick">
+          <title>{{ parentMark.label }}</title>
+          <circle class="planet-center" :cx="cx" :cy="cy" :r="sunR" :fill="parentMark.color" />
           <line
             v-if="showSunFacing"
             class="planet-center-facing"
-            :x1="jupiterMark.from.x"
-            :y1="jupiterMark.from.y"
-            :x2="jupiterMark.to.x"
-            :y2="jupiterMark.to.y"
-            :style="{ stroke: jupiterMark.color }"
+            :x1="parentMark.from.x"
+            :y1="parentMark.from.y"
+            :x2="parentMark.to.x"
+            :y2="parentMark.to.y"
+            :style="{ stroke: parentMark.color }"
           />
         </g>
       </svg>
@@ -831,7 +887,7 @@ const rows = computed(() =>
           >
             i
           </button>
-          <div v-if="!isJupiter" id="orbit-help" role="tooltip" class="help__panel">
+          <div v-if="!isSatelliteSystem" id="orbit-help" role="tooltip" class="help__panel">
             <p>
               <strong>e</strong> is orbital eccentricity — 0 is a circle, Mercury’s ~0.206 is the
               most stretched among the planets.
@@ -881,35 +937,68 @@ const rows = computed(() =>
               for Mercury — which is why Mercury’s hand above creeps backwards near perihelion. The
               obliquity term, which splits the year in two, is left out.
             </p>
+            <p>
+              <strong>Orbit accuracy.</strong> The elements are a linear fit valid 1800–2050, which
+              is where the epoch clamps, not an integrated ephemeris. JPL quotes about 20″ of
+              heliocentric longitude for the inner planets, rising to 600″ for Saturn — roughly 8
+              minutes of orbital phase for Earth and about 5 days for Saturn — with distances off by
+              6,000 km for Earth and 0.01 AU for Saturn. Earth’s row is really the Earth–Moon
+              barycenter, so its perihelion instant can miss by a day.
+            </p>
+            <p>
+              <strong>Spin accuracy.</strong> W is exact by construction, since the IAU tabulates a
+              defined rate rather than a measurement. The error is in what is left out: periodic
+              nutation and libration, largest at Neptune’s ±0.7° pole wobble and then Mercury’s
+              ~0.03°, and rates that are conventions rather than periods — the Sun’s Carrington
+              rate, Jupiter’s and Saturn’s System I. Civil UTC also goes straight into a formula
+              that wants barycentric dynamical time, which leaves every meridian about 70 seconds
+              short, 0.3° for Earth.
+            </p>
           </div>
           <div v-else id="orbit-help" role="tooltip" class="help__panel">
+            <p><strong>e</strong> is orbital eccentricity in {{ planetSystem?.orbitPlaneName }}.</p>
             <p>
-              <strong>e</strong> is orbital eccentricity in the local Laplace plane. The Galilean
-              moons are nearly circular.
+              <strong>λ</strong> is planetocentric longitude around {{ planetSystem?.name }}. The
+              orrery uses the plane chosen above: ecliptic (Earth perihelion at the top, matching
+              the solar system) or {{ planetSystem?.name }}’s equator (moons run evenly; the Sun’s
+              azimuth is seasonal). The table’s λ column stays ecliptic. <strong>ν</strong> is the
+              true anomaly from {{ planetSystem?.periapsisName }}.
             </p>
             <p>
-              <strong>λ</strong> is planetocentric ecliptic longitude — the moon’s angular position
-              around Jupiter, measured in the same Earth-perihelion frame as the solar-system
-              orrery. <strong>ν</strong> is the true anomaly from perijove.
-            </p>
-            <p>
-              <strong>i</strong> is inclination to the local Laplace plane, not the ecliptic.
-              <strong>a</strong>, <strong>q</strong>, and <strong>Q</strong> are mean, perijove, and
-              apojove distances in km and Jupiter radii.
+              <strong>i</strong> is inclination to {{ planetSystem?.orbitPlaneName }}.
+              <strong>a</strong>, <strong>q</strong>, and <strong>Q</strong> are mean,
+              {{ planetSystem?.periapsisName }}, and {{ planetSystem?.apoapsisName }} distances in
+              km and {{ planetSystem?.name }} radii.
             </p>
             <p>
               <strong>P<sub>rot</sub></strong> is the IAU sidereal spin. Click the heading for the
-              solar day — noon to noon for the Sun, not Jupiter — and again for the Jupiter day, the
-              time for Jupiter to stand on the same meridian again. That one reads ∞: all four moons
-              spin once per orbit, so <strong>P<sub>orb</sub>/P<sub>rot</sub></strong> is 1 and
-              Jupiter never leaves its spot in the sky. One hemisphere always faces it and the other
-              never sees it at all.
+              solar day — noon to noon for the Sun, not {{ planetSystem?.name }} — and again for the
+              parent day, the time for {{ planetSystem?.name }} to stand on the same meridian again.
+              It reads ∞ for a synchronous moon: <strong>P<sub>orb</sub>/P<sub>rot</sub></strong> is
+              1 and the parent never leaves its spot in the sky. Every moon in the orrery is
+              synchronous, so IAU longitude 0 faces {{ planetSystem?.name }} and each facing whisker
+              points inward; where the lock is not exact, that moon’s own note says so.
             </p>
             <p>
               <strong>lib</strong> is the wobble around that spot. The spin is uniform but an
-              eccentric orbit is not, so Jupiter swings east and west by ±2e radians — ±0.46° for
-              Io, ±1.03° for Europa — once per orbit. Positions use JPL mean elements and will
-              slowly drift from the Laplace 4:2:1 resonance.
+              eccentric orbit is not, so the parent swings east and west by about ±2e radians once
+              per orbit.
+            </p>
+            <p>
+              <strong>Orbit accuracy.</strong> These are JPL mean elements at J2000 plus apsidal and
+              nodal precession, not an integrated ephemeris.
+              <template v-if="planetSystem?.id === 'earth'">
+                Orientation is the compact IAU 2009 series rather than a modern lunar ephemeris, so
+                the smallest libration terms are missing.
+              </template>
+              <template v-else>
+                Each moon is an independent ellipse, so nothing holds a resonance between
+                them<template v-if="planetSystem?.id === 'jupiter'">
+                  — the Laplace 4:2:1 chain drifts apart</template
+                >.
+              </template>
+              By the far ends of the 1800–2050 window the sub-{{ planetSystem?.name }} point has
+              wandered a few degrees.
             </p>
           </div>
         </span>
@@ -954,7 +1043,9 @@ const rows = computed(() =>
           </caption>
           <thead>
             <tr>
-              <th scope="col" class="readout__planet">{{ isJupiter ? 'Moon' : 'Planet' }}</th>
+              <th scope="col" class="readout__planet">
+                {{ isSatelliteSystem ? 'Moon' : 'Planet' }}
+              </th>
               <th v-if="showColumn('e')" scope="col" title="Orbital eccentricity">e</th>
               <th v-if="showColumn('obliquity')" scope="col" title="Obliquity">ε</th>
               <th v-if="showColumn('rotation')" scope="col" title="Rotation period">
@@ -974,10 +1065,10 @@ const rows = computed(() =>
                   class="th-toggle"
                   :aria-label="
                     orbitUnit === 'earth'
-                      ? isJupiter
+                      ? isSatelliteSystem
                         ? 'Orbital period in Earth days. Click to show the moon’s own days.'
                         : 'Orbital period in Earth days and years. Click to show the planet’s own days.'
-                      : isJupiter
+                      : isSatelliteSystem
                         ? 'Orbital period in the moon’s own days. Click to show Earth days.'
                         : 'Orbital period in the planet’s own days. Click to show Earth days and years.'
                   "
@@ -1001,12 +1092,12 @@ const rows = computed(() =>
                 v-if="showColumn('libration')"
                 scope="col"
                 :title="
-                  isJupiter
-                    ? 'Libration of Jupiter about the sub-Jupiter point'
+                  isSatelliteSystem
+                    ? `Libration of ${planetSystem?.name} about the sub-parent point`
                     : 'Equation of time, eccentricity term'
                 "
               >
-                {{ isJupiter ? 'lib' : 'eot' }}
+                {{ isSatelliteSystem ? 'lib' : 'eot' }}
               </th>
               <th v-if="showColumn('w0')" scope="col" title="Prime-meridian angle">
                 W<sub>0</sub>
@@ -1116,7 +1207,6 @@ const rows = computed(() =>
 .orrery__note {
   position: absolute;
   z-index: 1;
-  pointer-events: none;
   box-sizing: border-box;
   width: min(18.5rem, 70%);
   max-height: min(12rem, 45%);
@@ -1522,7 +1612,7 @@ const rows = computed(() =>
   display: none;
   overflow: auto;
   position: absolute;
-  z-index: 2;
+  z-index: 20;
   top: 100%;
   left: 0;
   width: min(18.5rem, 70vw);

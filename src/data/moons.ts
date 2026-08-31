@@ -1,20 +1,35 @@
 /**
- * Galilean satellites: mean elements vs the local Laplace plane at
- * 2000-01-01.5 TDB, from JPL SSD Planetary Satellite Mean Elements (JUP365).
+ * Natural satellites: mean elements at 2000-01-01.5 TDB from JPL SSD
+ * Planetary Satellite Mean Elements (DE405/LE405 for the Moon, JUP365 for the
+ * Galileans, URA182 equatorial elements for the five major Uranian moons).
+ * The Moon is referred to the J2000 ecliptic; the Galileans use their local
+ * Laplace planes; the Uranian majors use Uranus's equator.
  * https://ssd.jpl.nasa.gov/sats/elem/sep.html
  *
  * Unlike the planet table, these are epoch elements plus periapsis/node
  * precession periods, not linear rates per century. Independent Kepler
  * ellipses will slowly drift from the Laplace 4:2:1 resonance.
  *
- * Poles and prime meridians: IAU WGCCRE 2015 / NAIF pck00011.tpc
- * (BODY501 … BODY504). Nutation terms omitted, same as the planets.
- * IAU longitude 0 faces Jupiter (synchronous default).
+ * Poles and prime meridians: IAU WGCCRE 2015 / NAIF pck00011.tpc for
+ * BODY501 … BODY504 and BODY701 … BODY705; IAU 2009's periodic series for
+ * the Moon. IAU longitude 0 faces the parent planet for these synchronous
+ * satellites.
  */
 
+import type { PlanetSystemId } from './planetSystems.ts'
 import { omegaFromWDot, type BodyFrames } from './planets.ts'
 
-export type MoonId = 'io' | 'europa' | 'ganymede' | 'callisto'
+export type SatelliteId =
+  | 'moon'
+  | 'io'
+  | 'europa'
+  | 'ganymede'
+  | 'callisto'
+  | 'miranda'
+  | 'ariel'
+  | 'umbriel'
+  | 'titania'
+  | 'oberon'
 
 /**
  * Mean Keplerian elements referred to the local Laplace plane.
@@ -41,6 +56,8 @@ export type SatelliteElements = {
   Omega0: number
   /** Sidereal orbital period, days. */
   periodDays: number
+  /** Whether periodDays already includes apsidal and nodal motion. */
+  periodIsSidereal?: boolean
   /** Periapsis precession period, years. */
   periapsisPeriodYears: number
   /** Nodal precession period, years; 0 when the node is undefined (i ≈ 0). */
@@ -62,16 +79,50 @@ export type SatelliteElements = {
   laplaceDec: number
 }
 
-export type Moon = BodyFrames & {
-  id: MoonId
+export type Satellite = BodyFrames & {
+  id: SatelliteId
   name: string
   color: string
   symbol: string
-  parent: 'jupiter'
+  parent: PlanetSystemId
   elements: SatelliteElements
 }
 
-export const MOONS: Moon[] = [
+export const MOONS: Satellite[] = [
+  {
+    id: 'moon',
+    name: 'Moon',
+    color: '#c9c9c4',
+    symbol: '☾',
+    parent: 'earth',
+    rotation: { r: omegaFromWDot(13.17635815), theta: 1.57015, phi: 214.4004 },
+    iau: {
+      ra0: 269.9949,
+      raDot: 0.0031,
+      dec0: 66.5392,
+      decDot: 0.013,
+      w0: 38.3213,
+      wDot: 13.17635815,
+    },
+    elements: {
+      aKm: 384400,
+      e: 0.0554,
+      omega0: 318.15,
+      M0: 135.27,
+      i0: 5.16,
+      Omega0: 125.08,
+      periodDays: 27.322,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 5.997,
+      nodePeriodYears: 18.6,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      // The lunar elements are referred directly to the J2000 ecliptic.
+      // Its north pole in ICRF coordinates supplies that plane to the shared transform.
+      laplaceRa: 270,
+      laplaceDec: 66.56072,
+    },
+  },
   {
     id: 'io',
     name: 'Io',
@@ -194,6 +245,169 @@ export const MOONS: Moon[] = [
       nodeDirection: -1,
       laplaceRa: 268.7,
       laplaceDec: 64.8,
+    },
+  },
+  // URA182 mean equatorial elements. The reference-plane pole is Uranus's IAU
+  // south pole so mean motion is prograde in that frame, matching the negative
+  // IAU W of these synchronous, equatorially orbiting moons.
+  {
+    id: 'miranda',
+    name: 'Miranda',
+    color: '#c8bba8',
+    symbol: 'Ⅴ',
+    parent: 'uranus',
+    rotation: { r: omegaFromWDot(-254.6906892), theta: 97.8265, phi: 77.7538 },
+    iau: {
+      ra0: 257.43,
+      raDot: 0,
+      dec0: -15.08,
+      decDot: 0,
+      w0: 30.7,
+      wDot: -254.6906892,
+    },
+    elements: {
+      aKm: 129846,
+      e: 0.001,
+      omega0: 154.8,
+      M0: 73.0,
+      i0: 4.4,
+      Omega0: 100.9,
+      periodDays: 1.413479,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 8.939,
+      nodePeriodYears: 17.787,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 77.311,
+      laplaceDec: 15.175,
+    },
+  },
+  {
+    id: 'ariel',
+    name: 'Ariel',
+    color: '#e8e4dc',
+    symbol: 'Ⅰ',
+    parent: 'uranus',
+    rotation: { r: omegaFromWDot(-142.8356681), theta: 97.8066, phi: 77.7555 },
+    iau: {
+      ra0: 257.43,
+      raDot: 0,
+      dec0: -15.1,
+      decDot: 0,
+      w0: 156.22,
+      wDot: -142.8356681,
+    },
+    elements: {
+      aKm: 190929,
+      e: 0.001,
+      omega0: 9.6,
+      M0: 193.5,
+      i0: 0,
+      Omega0: 0,
+      periodDays: 2.520379,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 28.901,
+      nodePeriodYears: 0,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 77.311,
+      laplaceDec: 15.175,
+    },
+  },
+  {
+    id: 'umbriel',
+    name: 'Umbriel',
+    color: '#5c5854',
+    symbol: 'Ⅱ',
+    parent: 'uranus',
+    rotation: { r: omegaFromWDot(-86.8688923), theta: 97.8066, phi: 77.7555 },
+    iau: {
+      ra0: 257.43,
+      raDot: 0,
+      dec0: -15.1,
+      decDot: 0,
+      w0: 108.05,
+      wDot: -86.8688923,
+    },
+    elements: {
+      aKm: 265986,
+      e: 0.004,
+      omega0: 183.4,
+      M0: 253.0,
+      i0: 0.1,
+      Omega0: 174.8,
+      periodDays: 4.144177,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 64.126,
+      nodePeriodYears: 129.745,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 77.311,
+      laplaceDec: 15.175,
+    },
+  },
+  {
+    id: 'titania',
+    name: 'Titania',
+    color: '#a89b8c',
+    symbol: 'Ⅲ',
+    parent: 'uranus',
+    rotation: { r: omegaFromWDot(-41.3514316), theta: 97.8066, phi: 77.7555 },
+    iau: {
+      ra0: 257.43,
+      raDot: 0,
+      dec0: -15.1,
+      decDot: 0,
+      w0: 77.74,
+      wDot: -41.3514316,
+    },
+    elements: {
+      aKm: 436298,
+      e: 0.002,
+      omega0: 184.0,
+      M0: 68.1,
+      i0: 0.1,
+      Omega0: 29.5,
+      periodDays: 8.705869,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 579.928,
+      nodePeriodYears: 1644.649,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 77.311,
+      laplaceDec: 15.175,
+    },
+  },
+  {
+    id: 'oberon',
+    name: 'Oberon',
+    color: '#8b7d6e',
+    symbol: 'Ⅳ',
+    parent: 'uranus',
+    rotation: { r: omegaFromWDot(-26.7394932), theta: 97.8066, phi: 77.7555 },
+    iau: {
+      ra0: 257.43,
+      raDot: 0,
+      dec0: -15.1,
+      decDot: 0,
+      w0: 6.77,
+      wDot: -26.7394932,
+    },
+    elements: {
+      aKm: 583511,
+      e: 0.002,
+      omega0: 132.2,
+      M0: 143.6,
+      i0: 0.1,
+      Omega0: 76.8,
+      periodDays: 13.463237,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 158.604,
+      nodePeriodYears: 192.798,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 77.311,
+      laplaceDec: 15.175,
     },
   },
 ]

@@ -61,7 +61,15 @@ $flanked-width: 78rem;
 }
 
 .stage__controls {
+  direction: rtl;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: $spacing-md;
+
+  > * {
+    direction: ltr;
+  }
 }
 
 @media (min-width: $flanked-width) {

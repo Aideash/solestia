@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import PlanetClock from '../components/PlanetClock.vue'
 import SolarSystemView from '../components/SolarSystemView.vue'
 import SystemStage from '../components/SystemStage.vue'
+import { planetSystemFor } from '../data/planetSystems.ts'
 import { ROTATION_FRAME_CHOICES, type RotationFrameChoice } from '../data/planets.ts'
 import { epochKey } from '../epoch.ts'
 import { solarSystemAt } from '../lib/kepler.ts'
@@ -28,8 +29,9 @@ function togglePlanet(id: string) {
   selectedPlanet.value = selectedPlanet.value === id ? null : id
 }
 
-function openJupiter() {
-  void router.push({ name: 'jupiter' })
+function openPlanetSystem(id: string) {
+  const system = planetSystemFor(id as Parameters<typeof planetSystemFor>[0])
+  if (system) void router.push({ name: system.routeName })
 }
 </script>
 
@@ -48,11 +50,10 @@ function openJupiter() {
     <template #center>
       <SolarSystemView
         :snapshot="snapshot"
-        system="solar"
         :selected-planet="selectedPlanet"
         :live="epoch.live.value"
         @select="togglePlanet"
-        @open="openJupiter"
+        @open="openPlanetSystem"
       />
     </template>
     <template #controls>
