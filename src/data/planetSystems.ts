@@ -1,7 +1,7 @@
 import type { SatelliteId } from './moons.ts'
 import type { PlanetId } from './planets.ts'
 
-export type PlanetSystemId = 'earth' | 'jupiter' | 'uranus'
+export type PlanetSystemId = 'earth' | 'jupiter' | 'uranus' | 'neptune'
 
 export const VIEW_PLANE_CHOICES = ['ecliptic', 'equator'] as const
 export type ViewPlane = (typeof VIEW_PLANE_CHOICES)[number]
@@ -71,6 +71,22 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     orbitPlaneName: 'Uranus’s equator',
     periapsisName: 'periuranion',
     apoapsisName: 'apouranion',
+    defaultViewPlane: 'equator',
+  },
+  neptune: {
+    id: 'neptune',
+    name: 'Neptune',
+    symbol: '♆',
+    routeName: 'neptune-system',
+    path: '/neptune',
+    radiusKm: 24764,
+    radiusSymbol: 'R_N',
+    satelliteIds: ['proteus', 'triton', 'nereid'],
+    innerSatelliteCount: 1,
+    orbitGroupName: 'Proteus, Triton, and Nereid',
+    orbitPlaneName: 'each moon’s local Laplace plane',
+    periapsisName: 'perineptune',
+    apoapsisName: 'aponeptune',
     defaultViewPlane: 'equator',
   },
 }

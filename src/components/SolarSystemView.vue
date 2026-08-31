@@ -11,6 +11,7 @@ import {
   type SatelliteState,
   type SolarSystemSnapshot,
 } from '../lib/kepler.ts'
+import { radialScale, type OrbitExtent } from '../lib/radialScale.ts'
 
 const props = defineProps<{
   snapshot: SolarSystemSnapshot | PlanetSystemSnapshot
@@ -75,6 +76,27 @@ const sunR = 3.5
 const sunFacingGap = 0.35
 const sunFacingMin = 0.6
 const sunFacingMax = 1.6
+
+/**
+ * The orbit in polar form about the focus, every sample carried through the
+ * shared radial scale so the curve, the body, and the periapsis tick agree.
+ */
+function orbitPath(
+  orbit: OrbitExtent,
+  periapsisOffset: number,
+  scale: (distance: number) => number,
+): string {
+  const semiLatusRectum = orbit.a * (1 - orbit.e * orbit.e)
+  const points = Array.from({ length: 97 }, (_, index) => {
+    const nu = (index / 96) * Math.PI * 2
+    const distance = semiLatusRectum / (1 + orbit.e * Math.cos(nu))
+    return orbitPoint(cx, cy, scale(distance), periapsisOffset + nu)
+  })
+  return points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+    .concat('Z')
+    .join(' ')
+}
 
 function formatDeg(rad: number): string {
   return `${((rad * 180) / Math.PI).toFixed(1)}°`
@@ -377,27 +399,22 @@ const rings = computed(() => {
   const origin = useEquator.value ? equatorOrigin : earthPerihelionLongitude
   const frameLabel = isPlanetSystemSnapshot(props.snapshot) ? 'IAU' : props.snapshot.rotationFrame
   const planeWord = useEquator.value ? 'equatorial' : 'ecliptic'
-  const count = bodies.value.length
-  return bodies.value.map((planet, i) => {
-    // A lone body would otherwise sit on the innermost ring, wasting the frame.
-    const spread = count > 1 ? i / (count - 1) : 1
-    const r = innerR + spread * (outerR - innerR)
+  const scale = radialScale(bodies.value, innerR, outerR)
+  return bodies.value.map((planet) => {
     const isMoon = 'equatorLongitude' in planet
     const bodyOffset =
       useEquator.value && isMoon ? planet.equatorLongitude : planet.offsetFromEarthPerihelion
-    const body = orbitPoint(
-      cx,
-      cy,
-      r,
-      useEquator.value && isMoon ? wrapRad(bodyOffset - origin) : bodyOffset,
-    )
+    const displayBodyOffset = useEquator.value && isMoon ? wrapRad(bodyOffset - origin) : bodyOffset
     const periAbs =
       useEquator.value && isMoon ? planet.equatorPeriapsis : planet.perihelionLongitude
     const periOffset = wrapRad(
       useEquator.value && isMoon ? periAbs - origin : periAbs - earthPerihelionLongitude,
     )
-    const periTick = orbitPoint(cx, cy, r, periOffset)
-    const periInner = orbitPoint(cx, cy, r - 1.4, periOffset)
+    const body = orbitPoint(cx, cy, scale(planet.a * planet.orbitRadiusRatio), displayBodyOffset)
+    const periapsisRadius = scale(planet.a * (1 - planet.e))
+    const periTick = orbitPoint(cx, cy, periapsisRadius, periOffset)
+    const periInner = orbitPoint(cx, cy, Math.max(0, periapsisRadius - 1.4), periOffset)
+    const path = orbitPath(planet, periOffset, scale)
 
     const bodyR = planet.id === 'earth' ? 1.7 : 1.45
     const facing = useEquator.value && isMoon ? planet.equatorFacing : planet.facing
@@ -414,7 +431,7 @@ const rings = computed(() => {
       `${planet.name} — ${frameLabel} prime meridian faces ` +
       `${formatDeg(facing.longitude)} ${planeWord} longitude`
 
-    return { planet, r, bodyR, body, periTick, periInner, facingFrom, facingTo, label }
+    return { planet, path, bodyR, body, periTick, periInner, facingFrom, facingTo, label }
   })
 })
 
@@ -575,7 +592,8 @@ const rows = computed(() =>
   bodies.value.map((planet) => {
     const kind = rotationKind.value
     const parentDay = 'parentDayDays' in planet ? planet.parentDayDays : Number.POSITIVE_INFINITY
-    const locked = kind === 'parent' && !Number.isFinite(parentDay)
+    const isSynchronous = 'parentDayDays' in planet && !Number.isFinite(parentDay)
+    const locked = kind === 'parent' && isSynchronous
     const rotationDays =
       kind === 'sidereal'
         ? planet.siderealRotationDays
@@ -633,10 +651,12 @@ const rows = computed(() =>
         ? {
             primary: `±${formatFineDeg(wobble)}`,
             secondary: formatQuantity(planet.siderealOrbitDays, 'd'),
-            note:
-              `${planetSystem.value?.name ?? 'The parent'} swings ±${formatFineDeg(wobble)} east and west of the sub-parent point, ` +
-              `once per orbit. The spin is uniform but an eccentric orbit is not, which is ` +
-              `optical libration — the same effect that shows Earth a little around each limb of the Moon.`,
+            note: isSynchronous
+              ? `${planetSystem.value?.name ?? 'The parent'} swings ±${formatFineDeg(wobble)} east and west of the sub-parent point, ` +
+                `once per orbit. The spin is uniform but an eccentric orbit is not, which is ` +
+                `optical libration — the same effect that shows Earth a little around each limb of the Moon.`
+              : `The true anomaly runs up to ${formatFineDeg(wobble)} ahead of and behind uniform mean anomaly over one orbit. ` +
+                `Because ${planet.name} is not locked, this is not libration around a fixed sub-parent point.`,
           }
         : {
             primary: `±${formatFineDeg(wobble)}`,
@@ -720,8 +740,8 @@ const rows = computed(() =>
           isSatelliteSystem
             ? useEquator
               ? `${planetSystem?.name} system orrery in the parent equator, Earth perihelion projected at the top`
-              : `${planetSystem?.name} system orrery with evenly spaced satellite orbits, Earth perihelion at the top`
-            : 'Solar system orrery with evenly spaced orbits, Earth perihelion at the top'
+              : `${planetSystem?.name} system orrery on a compressed distance scale, Earth perihelion at the top`
+            : 'Solar system orrery on a compressed distance scale, Earth perihelion at the top'
         "
       >
         <title>
@@ -739,9 +759,9 @@ const rows = computed(() =>
           {{
             isSatelliteSystem
               ? useEquator
-                ? `Concentric rings for ${planetSystem?.orbitGroupName}, viewed in ${planetSystem?.name}’s equator. Earth’s perihelion is projected at the top. The Sun’s azimuth is seasonal — it races near solstice when the Sun is almost over a pole. Each moon’s whisker shows where its IAU prime meridian points; longitude 0 faces ${planetSystem?.name}.`
-                : `Concentric rings for ${planetSystem?.orbitGroupName}. Earth’s perihelion is at the top. The Sun is marked at the anti-${planetSystem?.name} direction. Each moon’s whisker shows where its IAU prime meridian points; longitude 0 faces ${planetSystem?.name}.`
-              : 'Concentric rings for Mercury through Neptune. Earth’s perihelion is at the top, aphelion at the bottom. Planets sit at their heliocentric longitude for the selected time, each with a short whisker showing where its prime meridian points in the selected longitude system. The Sun at the center carries the same whisker for its Carrington prime meridian.'
+                ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed in ${planetSystem?.name}’s equator. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is projected at the top. The Sun’s azimuth is seasonal. Each moon’s whisker shows where its prime meridian points.`
+                : `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is at the top. The Sun is marked at the anti-${planetSystem?.name} direction. Each moon’s whisker shows where its prime meridian points.`
+              : 'Orbits of Mercury through Neptune about the focus at the Sun. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is at the top, aphelion at the bottom. Each planet sits at its current distance and longitude, with a short whisker showing where its prime meridian points. The Sun at the center carries the same whisker for its Carrington prime meridian.'
           }}
         </desc>
         <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
@@ -807,7 +827,7 @@ const rows = computed(() =>
           @dblclick="onBodyDblclick(ring.planet.id)"
         >
           <title>{{ ring.label }}</title>
-          <circle class="orbit" :cx="cx" :cy="cy" :r="ring.r" />
+          <path class="orbit" :d="ring.path" />
           <line
             v-if="showPerihelion"
             class="peri-tick"
@@ -890,7 +910,13 @@ const rows = computed(() =>
           <div v-if="!isSatelliteSystem" id="orbit-help" role="tooltip" class="help__panel">
             <p>
               <strong>e</strong> is orbital eccentricity — 0 is a circle, Mercury’s ~0.206 is the
-              most stretched among the planets.
+              most stretched among the planets. Each orbit above is drawn with the Sun at its focus,
+              so Mercury’s and Mars’s sit visibly off center.
+            </p>
+            <p>
+              Screen radius rises with real distance, but not proportionally: the mean distances are
+              spread evenly and the scale is compressed between them, so Mercury and Neptune share
+              one frame. Distances stay comparable, but every radial swing draws smaller than it is.
             </p>
             <p>
               <strong>ε</strong> (epsilon) is obliquity — the tilt of the spin axis from ecliptic
@@ -956,7 +982,18 @@ const rows = computed(() =>
             </p>
           </div>
           <div v-else id="orbit-help" role="tooltip" class="help__panel">
-            <p><strong>e</strong> is orbital eccentricity in {{ planetSystem?.orbitPlaneName }}.</p>
+            <p>
+              <strong>e</strong> is orbital eccentricity in {{ planetSystem?.orbitPlaneName }}. The
+              orbit paths put {{ planetSystem?.name }} at the focus, so an eccentric orbit sits off
+              center and the moon closes in and pulls away as it goes round.
+            </p>
+            <p>
+              Screen radius rises with real distance, but not proportionally: the mean distances are
+              spread evenly and the scale is compressed between them, which is what keeps orbits
+              tens of times apart inside one frame. Distances stay comparable, so no moon is drawn
+              inside another it never reaches, but every radial swing draws smaller than it is. Read
+              <strong>q</strong> and <strong>Q</strong> below for the true extremes.
+            </p>
             <p>
               <strong>λ</strong> is planetocentric longitude around {{ planetSystem?.name }}. The
               orrery uses the plane chosen above: ecliptic (Earth perihelion at the top, matching
@@ -975,14 +1012,13 @@ const rows = computed(() =>
               solar day — noon to noon for the Sun, not {{ planetSystem?.name }} — and again for the
               parent day, the time for {{ planetSystem?.name }} to stand on the same meridian again.
               It reads ∞ for a synchronous moon: <strong>P<sub>orb</sub>/P<sub>rot</sub></strong> is
-              1 and the parent never leaves its spot in the sky. Every moon in the orrery is
-              synchronous, so IAU longitude 0 faces {{ planetSystem?.name }} and each facing whisker
-              points inward; where the lock is not exact, that moon’s own note says so.
+              1 and the parent never leaves its spot in the sky. A finite parent day means the moon
+              is not locked, so the parent moves around its sky.
             </p>
             <p>
-              <strong>lib</strong> is the wobble around that spot. The spin is uniform but an
-              eccentric orbit is not, so the parent swings east and west by about ±2e radians once
-              per orbit.
+              <strong>lib</strong> is the orbital equation of center, about ±2e radians for a
+              low-eccentricity orbit. It appears as optical libration around the sub-parent point
+              only on a synchronously rotating moon.
             </p>
             <p>
               <strong>Orbit accuracy.</strong> These are JPL mean elements at J2000 plus apsidal and

@@ -17,6 +17,7 @@ import {
   solarSystemAt,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
+import { radialScale } from '../src/lib/radialScale.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -549,4 +550,166 @@ const miranda = uranusJ2000.satellites.find((m) => m.id === 'miranda')
 assert(miranda, 'Miranda missing from Uranus system')
 console.log(
   `ok  Uranian moons at J2000: Miranda ν ${deg(miranda.trueAnomaly).toFixed(1)}°, sidereal month ${miranda.siderealOrbitDays.toFixed(6)} d, Uranus day ${miranda.parentDayDays}`,
+)
+
+const neptuneEpoch = new Date('2000-01-01T12:00:00Z')
+const neptuneJ2000 = planetSystemAt(neptuneEpoch, 'neptune')
+assert(
+  neptuneJ2000.satellites.length === 3,
+  `expected 3 selected Neptunian moons, got ${neptuneJ2000.satellites.length}`,
+)
+const proteus = neptuneJ2000.satellites.find((m) => m.id === 'proteus')
+const triton = neptuneJ2000.satellites.find((m) => m.id === 'triton')
+const nereid = neptuneJ2000.satellites.find((m) => m.id === 'nereid')
+assert(proteus, 'Proteus missing from Neptune system')
+assert(triton, 'Triton missing from Neptune system')
+assert(nereid, 'Nereid missing from Neptune system')
+
+assert(
+  Math.abs(proteus.siderealOrbitDays - 1.122315) < 1e-5,
+  `Proteus sidereal month should be ~1.122315 d, got ${proteus.siderealOrbitDays}`,
+)
+assert(
+  proteus.parentDayDays === Number.POSITIVE_INFINITY && !proteus.orbitRetrograde,
+  'Proteus should be synchronously locked in a prograde orbit',
+)
+assert(
+  Math.abs(triton.siderealOrbitDays - 5.876854) < 1e-6,
+  `Triton sidereal month should be ~5.876854 d, got ${triton.siderealOrbitDays}`,
+)
+assert(triton.retrograde && triton.orbitRetrograde, 'Triton should spin and orbit retrograde')
+assert(
+  triton.parentDayDays === Number.POSITIVE_INFINITY,
+  `Triton is locked, so its Neptune day should be infinite, got ${triton.parentDayDays}`,
+)
+const tritonQuarter = planetSystemAt(
+  new Date(neptuneEpoch.getTime() + triton.siderealOrbitDays * 0.25 * 86_400_000),
+  'neptune',
+).satellites.find((m) => m.id === 'triton')
+assert(tritonQuarter, 'Triton missing a quarter-orbit later')
+const tritonStep = wrapRadSigned(tritonQuarter.equatorLongitude - triton.equatorLongitude)
+assert(
+  tritonStep < 0 && Math.abs(Math.abs(tritonStep) - Math.PI / 2) < 0.2,
+  `Triton should move retrograde by ~90° in a quarter month, moved ${deg(tritonStep).toFixed(1)}°`,
+)
+const tritonLate = planetSystemAt(new Date('2049-01-01T12:00:00Z'), 'neptune').satellites.find(
+  (m) => m.id === 'triton',
+)
+assert(tritonLate, 'Triton missing from the 2049 Neptune system')
+assert(
+  fractionGap(triton.parentFraction, tritonLate.parentFraction) < 0.002,
+  `Triton’s sub-Neptune longitude should remain locked through 2049, drifted from ${triton.parentFraction.toFixed(4)} to ${tritonLate.parentFraction.toFixed(4)}`,
+)
+
+assert(
+  Math.abs(nereid.e - 0.75074) < 1e-6,
+  `Nereid eccentricity should be 0.75074, got ${nereid.e}`,
+)
+assert(
+  Math.abs(nereid.siderealRotationDays * 24 - 11.594) < 0.001,
+  `Nereid rotation should be 11.594 h, got ${(nereid.siderealRotationDays * 24).toFixed(3)} h`,
+)
+assert(
+  Number.isFinite(nereid.parentDayDays) && nereid.parentDayDays < 0.5,
+  `Nereid should have a finite parent day under 12 h, got ${nereid.parentDayDays}`,
+)
+const nereidLater = planetSystemAt(
+  new Date(neptuneEpoch.getTime() + 0.25 * 86_400_000),
+  'neptune',
+).satellites.find((m) => m.id === 'nereid')
+assert(nereidLater, 'Nereid missing six hours later')
+assert(
+  fractionGap(nereid.parentFraction, nereidLater.parentFraction) > 0.35,
+  'Neptune should move substantially around Nereid’s clock over six hours',
+)
+assert(
+  nereid.orbitRadiusRatio >= 1 - nereid.e && nereid.orbitRadiusRatio <= 1 + nereid.e,
+  `Nereid radius ratio ${nereid.orbitRadiusRatio} should stay between periapsis and apoapsis`,
+)
+
+console.log(
+  `ok  Neptunian moons at J2000: Triton month ${triton.siderealOrbitDays.toFixed(6)} d retrograde, Nereid e ${nereid.e.toFixed(5)} and rotation ${(nereid.siderealRotationDays * 24).toFixed(3)} h`,
+)
+
+/**
+ * Orrery radial scale. The frame numbers mirror the ones in SolarSystemView,
+ * but every assertion below is a property of the scale itself and holds for any
+ * inner/outer pair: what matters is that a screen radius always grows with true
+ * distance, so no orbit is drawn inside one it never reaches.
+ */
+const INNER_RING = 10
+const OUTER_RING = 46
+const CENTER_DISC = 3.5
+
+const geometryEpoch = new Date('2026-01-01T00:00:00Z')
+const systems: { name: string; orbits: { id: string; a: number; e: number }[] }[] = [
+  {
+    name: 'solar',
+    orbits: solarSystemAt(geometryEpoch).planets.map((p) => ({ id: p.id, a: p.a, e: p.e })),
+  },
+  ...(['earth', 'jupiter', 'uranus', 'neptune'] as const).map((id) => ({
+    name: id,
+    orbits: planetSystemAt(geometryEpoch, id).satellites.map((m) => ({
+      id: m.id,
+      a: m.aKm,
+      e: m.e,
+    })),
+  })),
+]
+
+let tightestGap = Number.POSITIVE_INFINITY
+for (const system of systems) {
+  const scale = radialScale(system.orbits, INNER_RING, OUTER_RING)
+  const first = system.orbits[0]
+  const last = system.orbits[system.orbits.length - 1]
+
+  const from = first.a * (1 - first.e)
+  const to = last.a * (1 + last.e)
+  let previousRadius = 0
+  for (let step = 0; step <= 400; step++) {
+    const radius = scale(from + ((to - from) * step) / 400)
+    assert(
+      radius > previousRadius,
+      `${system.name} radial scale must rise with distance, but stalled or fell at ${radius.toFixed(4)}`,
+    )
+    previousRadius = radius
+  }
+
+  let previousApoapsis = CENTER_DISC
+  for (const orbit of system.orbits) {
+    const periapsis = scale(orbit.a * (1 - orbit.e))
+    const apoapsis = scale(orbit.a * (1 + orbit.e))
+    const gap = periapsis - previousApoapsis
+    assert(
+      gap > 1,
+      `${system.name}: ${orbit.id} should clear the orbit inside it by at least 1 unit, got ${gap.toFixed(2)}`,
+    )
+    assert(
+      apoapsis >= periapsis,
+      `${system.name}: ${orbit.id} apoapsis ${apoapsis.toFixed(2)} should not fall inside its periapsis ${periapsis.toFixed(2)}`,
+    )
+    tightestGap = Math.min(tightestGap, gap)
+    previousApoapsis = apoapsis
+  }
+
+  assert(
+    Math.abs(previousApoapsis - OUTER_RING) < 1e-9,
+    `${system.name}: the outermost apoapsis should land on the outer ring, got ${previousApoapsis.toFixed(4)}`,
+  )
+}
+
+const neptuneScale = radialScale(
+  systems.find((system) => system.name === 'neptune')!.orbits,
+  INNER_RING,
+  OUTER_RING,
+)
+const nereidPeriapsis = neptuneScale(nereid.aKm * (1 - nereid.e))
+const tritonApoapsis = neptuneScale(triton.aKm * (1 + triton.e))
+assert(
+  nereidPeriapsis > tritonApoapsis + 5,
+  `Nereid at perineptune should draw well outside Triton, got ${nereidPeriapsis.toFixed(2)} against ${tritonApoapsis.toFixed(2)}`,
+)
+
+console.log(
+  `ok  orrery radial scale rises with distance in every system, tightest orbit gap ${tightestGap.toFixed(2)} of ${OUTER_RING} units; Nereid’s perineptune draws at ${nereidPeriapsis.toFixed(1)} against Triton at ${tritonApoapsis.toFixed(1)}`,
 )

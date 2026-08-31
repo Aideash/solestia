@@ -5,9 +5,8 @@ import type { PlanetId } from './planets.ts'
  * Short notes for the selected-body callout, limited to what is peculiar to
  * that body. Bodies with nothing peculiar stay omitted.
  *
- * Two things deliberately stay out: model accuracy, which belongs in the orbit
- * table's help panel, and the tidal lock, which every moon here shares — a moon
- * earns a note only when the lock is imperfect, as Europa's may be.
+ * Model accuracy belongs in the orbit table's help panel. Tidal locking is
+ * mentioned only where it is unusual or absent.
  */
 export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> = {
   mercury: [
@@ -40,6 +39,7 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
   neptune: [
     'IAU 2015 W is Karkoschka’s ~15.97 h south-polar cloud period, the cartographic longitude since 2015. The cloud picker uses that same W.',
     'Magnetic is the Voyager radio period of ~16.11 h (Seidelmann et al. 2002), a distinct reference from the IAU meridian.',
+    'Double-click Neptune to open the system of Proteus, Triton, and Nereid.',
   ],
   io: [
     'The 4:2:1 Laplace resonance with Europa and Ganymede keeps pumping Io’s small eccentricity, and the tidal flexing that follows makes it the most volcanically active body in the solar system.',
@@ -78,5 +78,17 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
   ],
   oberon: [
     'Outermost of the five and heavily cratered, with dark deposits on many crater floors. Voyager 2 caught an ~11 km mountain in profile on its limb.',
+  ],
+  proteus: [
+    'Neptune’s largest inner moon is just over the size at which icy bodies become rounded by their own gravity; its irregular outline still carries the enormous crater Pharos.',
+    'Proteus follows a nearly circular, nearly equatorial orbit and keeps the same face toward Neptune.',
+  ],
+  triton: [
+    'Triton is the only large moon with a retrograde orbit. Its reversed motion and inclined path point to capture from the Kuiper belt.',
+    'Despite that capture, tides have circularized the orbit and locked Triton’s rotation to its 5.88-day month.',
+  ],
+  nereid: [
+    'Nereid’s eccentricity is about 0.75: its distance from Neptune changes by roughly a factor of seven between perineptune and aponeptune.',
+    'It rotates in 11.594 hours instead of keeping one face toward Neptune. No standard pole or prime-meridian solution exists, so this clock assumes a prograde orbit-normal pole and an arbitrary J2000 phase.',
   ],
 }

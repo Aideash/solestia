@@ -27,6 +27,13 @@ export const router = createRouter({
       props: { systemId: 'uranus' },
       meta: { subtitle: 'Uranus' },
     },
+    {
+      path: '/neptune',
+      name: 'neptune-system',
+      component: PlanetSystemPage,
+      props: { systemId: 'neptune' },
+      meta: { subtitle: 'Neptune' },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

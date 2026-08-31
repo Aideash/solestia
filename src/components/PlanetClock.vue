@@ -14,6 +14,13 @@ const emit = defineEmits<{ select: [] }>()
 
 const isSatellite = computed(() => 'parentFraction' in props.planet)
 const parent = computed(() => (props.parentSystem ? PLANET_SYSTEMS[props.parentSystem] : null))
+const orbitReversed = computed(
+  () => 'orbitRetrograde' in props.planet && props.planet.orbitRetrograde,
+)
+const dayReversed = computed(() => props.planet.retrograde)
+const isSynchronous = computed(
+  () => 'parentDayDays' in props.planet && !Number.isFinite(props.planet.parentDayDays),
+)
 
 const cx = 50
 const cy = 50
@@ -27,7 +34,7 @@ const rimCircumference = 2 * Math.PI * rimRadius
 const YEAR_DIVISIONS = 12
 const DAY_DIVISIONS = 24
 
-/** Clockwise from the top, matching a wall clock rather than the orrery. */
+/** Clockwise from the top; callers negate physical retrograde progress. */
 function dialPoint(radius: number, fraction: number): { x: number; y: number } {
   const angle = fraction * Math.PI * 2
   return {
@@ -55,25 +62,33 @@ const yearTicks = tickMarks(
 )
 const dayTicks = tickMarks(DAY_DIVISIONS, faceRadius - 3, faceRadius, 6)
 
-const yearOffset = computed(() => rimCircumference * (1 - props.planet.yearFraction))
-const yearHead = computed(() => dialPoint(rimRadius, props.planet.yearFraction))
-const dayHand = computed(() => dialPoint(handRadius, props.planet.dayFraction))
+const yearOffset = computed(
+  () => rimCircumference * (1 - props.planet.yearFraction) * (orbitReversed.value ? -1 : 1),
+)
+const yearHead = computed(() =>
+  dialPoint(rimRadius, props.planet.yearFraction * (orbitReversed.value ? -1 : 1)),
+)
+const dayHand = computed(() =>
+  dialPoint(handRadius, props.planet.dayFraction * (dayReversed.value ? -1 : 1)),
+)
 const parentMark = computed(() => {
   if (!('parentFraction' in props.planet)) return null
-  return dialPoint(handRadius * 0.72, props.planet.parentFraction)
+  return dialPoint(handRadius * 0.72, props.planet.parentFraction * (dayReversed.value ? -1 : 1))
 })
 
-/** Pie slice from local midnight at the top, sweeping clockwise. */
+/** Pie slice from local midnight, following the body's physical spin direction. */
 const daySector = computed(() => {
+  if (isSatellite.value && !isSynchronous.value) return ''
   const fraction = Math.min(props.planet.dayFraction, 0.9999)
   if (fraction <= 0.0001) return ''
   const start = dialPoint(sectorRadius, 0)
-  const end = dialPoint(sectorRadius, fraction)
+  const end = dialPoint(sectorRadius, fraction * (dayReversed.value ? -1 : 1))
   const largeArc = fraction > 0.5 ? 1 : 0
+  const sweep = dayReversed.value ? 0 : 1
   return [
     `M ${cx} ${cy}`,
     `L ${start.x} ${start.y}`,
-    `A ${sectorRadius} ${sectorRadius} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+    `A ${sectorRadius} ${sectorRadius} 0 ${largeArc} ${sweep} ${end.x} ${end.y}`,
     'Z',
   ].join(' ')
 })
@@ -109,7 +124,9 @@ const label = computed(() => {
   if ('parentFraction' in planet && parent.value) {
     const hour = localTime(planet.parentFraction)
     parts.push(
-      `${parent.value.name} transits the prime meridian near ${hour} (1:1 lock, with libration)`,
+      isSynchronous.value
+        ? `${parent.value.name} transits the prime meridian near ${hour} (1:1 lock, with libration)`
+        : `${parent.value.name} transits the prime meridian near ${hour}; the parent day is ${planet.parentDayDays.toFixed(3)} Earth days`,
     )
   }
   return parts.join(' · ')

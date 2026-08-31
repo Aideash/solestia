@@ -1,7 +1,8 @@
 /**
  * Natural satellites: mean elements at 2000-01-01.5 TDB from JPL SSD
  * Planetary Satellite Mean Elements (DE405/LE405 for the Moon, JUP365 for the
- * Galileans, URA182 equatorial elements for the five major Uranian moons).
+ * Galileans, URA182 equatorial elements for the five major Uranian moons, and
+ * NEP081 local-Laplace-plane elements for Proteus, Triton, and Nereid).
  * The Moon is referred to the J2000 ecliptic; the Galileans use their local
  * Laplace planes; the Uranian majors use Uranus's equator.
  * https://ssd.jpl.nasa.gov/sats/elem/sep.html
@@ -11,9 +12,9 @@
  * ellipses will slowly drift from the Laplace 4:2:1 resonance.
  *
  * Poles and prime meridians: IAU WGCCRE 2015 / NAIF pck00011.tpc for
- * BODY501 … BODY504 and BODY701 … BODY705; IAU 2009's periodic series for
- * the Moon. IAU longitude 0 faces the parent planet for these synchronous
- * satellites.
+ * BODY501 … BODY504, BODY701 … BODY705, BODY801, and BODY808; IAU 2009's
+ * periodic series for the Moon. Nereid's documented approximation is the
+ * exception because the IAU provides no orientation model for BODY802.
  */
 
 import type { PlanetSystemId } from './planetSystems.ts'
@@ -30,6 +31,9 @@ export type SatelliteId =
   | 'umbriel'
   | 'titania'
   | 'oberon'
+  | 'proteus'
+  | 'triton'
+  | 'nereid'
 
 /**
  * Mean Keplerian elements referred to the local Laplace plane.
@@ -58,6 +62,8 @@ export type SatelliteElements = {
   periodDays: number
   /** Whether periodDays already includes apsidal and nodal motion. */
   periodIsSidereal?: boolean
+  /** Orbital sense relative to the parent IAU north pole; defaults to prograde. */
+  orbitDirection?: 1 | -1
   /** Periapsis precession period, years. */
   periapsisPeriodYears: number
   /** Nodal precession period, years; 0 when the node is undefined (i ≈ 0). */
@@ -408,6 +414,112 @@ export const MOONS: Satellite[] = [
       nodeDirection: -1,
       laplaceRa: 77.311,
       laplaceDec: 15.175,
+    },
+  },
+  // NEP081 mean elements. Triton's high inclination makes its orbit retrograde
+  // relative to Neptune's IAU north pole. Nereid has no IAU orientation model:
+  // its measured 11.594 h prograde rotation is modeled about the orbit-normal
+  // Laplace pole, with an arbitrary prime meridian at J2000.
+  {
+    id: 'proteus',
+    name: 'Proteus',
+    color: '#8d8b86',
+    symbol: 'Ⅷ',
+    parent: 'neptune',
+    rotation: { r: omegaFromWDot(320.7654228), theta: 28.5007, phi: 318.631 },
+    iau: {
+      ra0: 299.27,
+      raDot: 0,
+      dec0: 42.91,
+      decDot: 0,
+      w0: 93.38,
+      wDot: 320.7654228,
+    },
+    elements: {
+      aKm: 117646,
+      e: 0.00051,
+      omega0: 67.968,
+      M0: 250.9377,
+      i0: 0.0749,
+      Omega0: 315.1314,
+      periodDays: 360 / 320.7656245,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 360 / (28.1362 - -28.2873),
+      nodePeriodYears: 360 / 28.2873,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 299.4058,
+      laplaceDec: 42.4317,
+    },
+  },
+  {
+    id: 'triton',
+    name: 'Triton',
+    color: '#d7b6a5',
+    symbol: 'Ⅰ',
+    parent: 'neptune',
+    rotation: { r: omegaFromWDot(-61.2572637), theta: 130.267, phi: 125.8429 },
+    iau: {
+      ra0: 299.36,
+      raDot: 0,
+      dec0: 41.17,
+      decDot: 0,
+      w0: 296.53,
+      wDot: -61.2572637,
+    },
+    elements: {
+      aKm: 354759,
+      e: 0.00001,
+      // NEP081 uses ϖ = Ω − ω and λ = ϖ − M for retrograde Triton.
+      omega0: 289.0733,
+      M0: 7.7433,
+      i0: 156.865,
+      Omega0: 177.6075,
+      periodDays: 360 / 61.2572638,
+      periodIsSidereal: true,
+      orbitDirection: -1,
+      periapsisPeriodYears: 360 / (0.5237 - 0.4081),
+      nodePeriodYears: 360 / 0.5237,
+      apsisDirection: 1,
+      nodeDirection: 1,
+      laplaceRa: 299.456,
+      laplaceDec: 43.4141,
+    },
+  },
+  {
+    id: 'nereid',
+    name: 'Nereid',
+    color: '#b8c6ca',
+    symbol: 'Ⅱ',
+    parent: 'neptune',
+    rotation: {
+      r: omegaFromWDot(360 / (11.594 / 24)),
+      theta: 2.5694,
+      phi: 95.5565,
+    },
+    iau: {
+      ra0: 269.3023,
+      raDot: 0,
+      dec0: 69.1166,
+      decDot: 0,
+      w0: 0,
+      wDot: 360 / (11.594 / 24),
+    },
+    elements: {
+      aKm: 5513818,
+      e: 0.75074,
+      omega0: 281.1173,
+      M0: 216.6923,
+      i0: 7.0903,
+      Omega0: 335.5701,
+      periodDays: 360 / 0.9996276,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 360 / (0.0064 - -0.0381),
+      nodePeriodYears: 360 / 0.0381,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 269.3023,
+      laplaceDec: 69.1166,
     },
   },
 ]

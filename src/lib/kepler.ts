@@ -29,7 +29,7 @@ export type PlanetState = {
   name: string
   color: string
   symbol?: string
-  /** Semi-major axis in AU (unused for equal-ring display). */
+  /** Semi-major axis in AU; the orrery's radial scale is pinned to it. */
   a: number
   e: number
   /** Orbital inclination to the ecliptic of J2000, radians. */
@@ -62,6 +62,8 @@ export type PlanetState = {
   siderealOrbitDays: number
   /** Heliocentric position in ecliptic-of-J2000 rectangular coordinates, AU. */
   position: Vec3
+  /** Instantaneous orbital radius divided by the semi-major axis. */
+  orbitRadiusRatio: number
   /** Fraction of the orbit elapsed since perihelion, 0 to 1, advancing uniformly. */
   yearFraction: number
   /**
@@ -121,6 +123,8 @@ export type SolarSystemSnapshot = {
 export type SatelliteState = Omit<PlanetState, 'id'> & {
   id: SatelliteId
   aKm: number
+  /** Whether orbital angular momentum points opposite the parent IAU north pole. */
+  orbitRetrograde: boolean
   /**
    * Where the parent planet sits on the solar-day dial: 0 opposite the prime
    * meridian, 0.5 when the parent stands on the prime meridian.
@@ -492,6 +496,7 @@ function planetState(
     retrograde,
     siderealOrbitDays,
     position,
+    orbitRadiusRatio: 1 - e * Math.cos(E),
     yearFraction: wrapRad(meanAnomaly) / (Math.PI * 2),
     dayFraction,
     subsolarLatitude,
@@ -556,6 +561,55 @@ function siderealMeanMotion(el: SatelliteElements): number {
  * matched to the mean-element accuracy used by this orrery.
  */
 export function satelliteIauFrame(satellite: Satellite, days: number): IauFrame {
+  if (satellite.id === 'triton') {
+    const t = days / 36525
+    const angles = [
+      [357.85, 52.316],
+      [323.92, 62606.6],
+      [220.51, 55064.2],
+      [354.27, 46564.5],
+      [75.31, 26109.4],
+      [35.36, 14325.4],
+      [142.61, 2824.6],
+      [177.85, 52.316],
+      [647.84, 125213.2],
+      [355.7, 104.632],
+      [533.55, 156.948],
+      [711.4, 209.264],
+      [889.25, 261.58],
+      [1067.1, 313.896],
+      [1244.95, 366.212],
+      [1422.8, 418.528],
+      [1600.65, 470.844],
+    ].map(([base, rate]) => degToRad(base + rate * t))
+    const sin = (index: number) => Math.sin(angles[index - 1])
+    const cos = (index: number) => Math.cos(angles[index - 1])
+    const raCoefficients = [
+      0, 0, 0, 0, 0, 0, 0, -32.35, 0, -6.28, -2.08, -0.74, -0.28, -0.11, -0.07, -0.02, -0.01,
+    ]
+    const decCoefficients = [0, 0, 0, 0, 0, 0, 0, 22.55, 0, 2.1, 0.55, 0.16, 0.05, 0.02, 0.01, 0, 0]
+    const pmCoefficients = [
+      0, 0, 0, 0, 0, 0, 0, 22.25, 0, 6.73, 2.05, 0.74, 0.28, 0.11, 0.05, 0.02, 0.01,
+    ]
+    const ra =
+      299.36 +
+      raCoefficients.reduce((sum, coefficient, index) => sum + coefficient * sin(index + 1), 0)
+    const dec =
+      41.17 +
+      decCoefficients.reduce((sum, coefficient, index) => sum + coefficient * cos(index + 1), 0)
+    const w =
+      296.53 +
+      satellite.iau.wDot * days +
+      pmCoefficients.reduce((sum, coefficient, index) => sum + coefficient * sin(index + 1), 0)
+    return {
+      ra0: ra,
+      raDot: 0,
+      dec0: dec,
+      decDot: 0,
+      w0: w - satellite.iau.wDot * days,
+      wDot: satellite.iau.wDot,
+    }
+  }
   if (satellite.id !== 'moon') return satellite.iau
 
   const t = days / 36525
@@ -628,7 +682,9 @@ function evaluateSatellite(satellite: Satellite, days: number) {
   const el = satellite.elements
   const rate = precessionRates(el)
   const meanAnomalyRate = el.periodIsSidereal
-    ? 360 / el.periodDays - rate.apsis - rate.node
+    ? el.orbitDirection === -1
+      ? 360 / el.periodDays + rate.node - rate.apsis
+      : 360 / el.periodDays - rate.apsis - rate.node
     : 360 / el.periodDays
   const M = el.M0 + meanAnomalyRate * days
   const omega = el.omega0 + rate.apsis * days
@@ -642,15 +698,6 @@ function evaluateSatellite(satellite: Satellite, days: number) {
     Omega: degToRad(Omega),
     varpi: degToRad(omega + Omega),
   }
-}
-
-/** Dot product of two ICRF poles given as RA/Dec in degrees. */
-function icrfPoleDot(ra1: number, dec1: number, ra2: number, dec2: number): number {
-  const a = degToRad(ra1)
-  const d1 = degToRad(dec1)
-  const b = degToRad(ra2)
-  const d2 = degToRad(dec2)
-  return Math.sin(d1) * Math.sin(d2) + Math.cos(d1) * Math.cos(d2) * Math.cos(a - b)
 }
 
 /**
@@ -760,8 +807,16 @@ function satelliteState(
   )
   const solarDay = solarDayDays(siderealRotationDays, parent.siderealOrbitDays, retrograde)
   const spinRate = (2 * Math.PI) / siderealRotationDays
-  const orbitRetrograde =
-    icrfPoleDot(satellite.elements.laplaceRa, satellite.elements.laplaceDec, iau.ra0, iau.dec0) < 0
+  const orbitPole = laplaceToEcliptic(
+    {
+      x: Math.sin(i) * Math.sin(Omega),
+      y: -Math.sin(i) * Math.cos(Omega),
+      z: Math.cos(i),
+    },
+    satellite.elements.laplaceRa,
+    satellite.elements.laplaceDec,
+  )
+  const orbitRetrograde = dot(eclipticToEquatorial(orbitPole), bodyFrame(iau, days).pole) < 0
   return {
     id: satellite.id,
     name: satellite.name,
@@ -784,6 +839,7 @@ function satelliteState(
     retrograde,
     siderealOrbitDays,
     position,
+    orbitRadiusRatio: 1 - e * Math.cos(E),
     yearFraction: wrapRad(meanAnomaly) / (Math.PI * 2),
     dayFraction,
     subsolarLatitude,
@@ -792,6 +848,7 @@ function satelliteState(
     equatorLongitude: projectOntoEquator(relative, equator).longitude,
     equatorPeriapsis: projectOntoEquator(peri, equator).longitude,
     equatorFacing: projectIcrfOntoEquator(bodyFrame(iau, days).primeMeridian, equator),
+    orbitRetrograde,
     parentFraction,
     parentDayDays: parentDayDays(
       siderealRotationDays,

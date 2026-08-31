@@ -13,6 +13,7 @@ const emit = defineEmits<{
   live: []
 }>()
 
+const MS_PER_MINUTE = 60_000
 const MS_PER_HOUR = 3_600_000
 const MS_PER_DAY = 86_400_000
 const MS_PER_MONTH = 30 * MS_PER_DAY
@@ -54,9 +55,10 @@ const nowMarkPct = computed(() => {
   return ((t - ELEMENTS_VALID_FROM_MS) / rangeSpan) * 100
 })
 
-function scrubMsPerPixel(event: { shiftKey: boolean; altKey: boolean }): number {
+function scrubMsPerPixel(event: { shiftKey: boolean; altKey: boolean; ctrlKey: boolean }): number {
   if (event.altKey) return MS_PER_MONTH
   if (event.shiftKey) return MS_PER_DAY
+  if (event.ctrlKey) return MS_PER_MINUTE
   return MS_PER_HOUR
 }
 
