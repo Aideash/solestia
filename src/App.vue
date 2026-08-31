@@ -17,7 +17,7 @@ const router = useRouter()
 const subtitle = computed(() =>
   typeof route.meta.subtitle === 'string' ? route.meta.subtitle : null,
 )
-const isPlanetSystem = computed(() => route.name !== 'solar')
+const isDetailView = computed(() => route.name !== 'solar')
 
 function startLiveClock() {
   window.clearInterval(timer)
@@ -63,7 +63,7 @@ function onAppKeydown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
-  if (isPlanetSystem.value) {
+  if (isDetailView.value) {
     void router.push({ name: 'solar' })
     event.preventDefault()
   }

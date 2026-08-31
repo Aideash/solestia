@@ -1,3 +1,4 @@
+import type { AsteroidId } from './asteroids.ts'
 import type { SatelliteId } from './moons.ts'
 import type { PlanetId, RotationFrameChoice } from './planets.ts'
 
@@ -8,7 +9,7 @@ import type { PlanetId, RotationFrameChoice } from './planets.ts'
  * Model accuracy belongs in the orbit table's help panel. Tidal locking is
  * mentioned only where it is unusual or absent.
  */
-export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> = {
+export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId | AsteroidId, string[]>> = {
   mercury: [
     'Mercury is locked in a 3:2 spin–orbit resonance: two spins for every three orbits, so a solar day lasts longer than a year.',
     'The clocks use apparent solar time, not a mean Sun. Around perihelion the true Sun reverses in Mercury’s sky, and the day hand genuinely creeps backward for a few days.',
@@ -120,6 +121,12 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
     'Nereid’s eccentricity is about 0.75: its distance from Neptune changes by roughly a factor of seven between perineptune and aponeptune.',
     'It rotates in 11.594 hours instead of keeping one face toward Neptune. No standard pole or prime-meridian solution exists, so this clock assumes a prograde orbit-normal pole and an arbitrary J2000 phase.',
   ],
+  hygiea: [
+    'Hygiea rotates retrograde in 13.82559 hours. Its period and pole are measured, but no cartographic prime meridian has been defined, so the clock uses an arbitrary J2000 phase.',
+  ],
+  interamnia: [
+    'Interamnia rotates in 8.71234 hours. Its period and pole are measured, but no cartographic prime meridian has been defined, so the clock uses an arbitrary J2000 phase.',
+  ],
 }
 
 /**
@@ -135,7 +142,7 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
  */
 type MeridianLabel = { iau: string; magnetic?: string; cloud?: string }
 
-export const PRIME_MERIDIANS: Record<PlanetId | SatelliteId, MeridianLabel> = {
+export const PRIME_MERIDIANS: Record<PlanetId | SatelliteId | AsteroidId, MeridianLabel> = {
   mercury: { iau: 'PM: Hun Kal at 20° W' },
   venus: { iau: 'PM: Ariadne crater' },
   earth: { iau: 'PM: IERS reference meridian' },
@@ -164,9 +171,19 @@ export const PRIME_MERIDIANS: Record<PlanetId | SatelliteId, MeridianLabel> = {
   proteus: { iau: 'PM: Neptune facing' },
   triton: { iau: 'PM: Neptune facing' },
   nereid: { iau: 'PM: None defined' },
+  vesta: { iau: 'PM: Claudia crater' },
+  ceres: { iau: 'PM: Kait crater' },
+  pallas: { iau: 'PM: Long axis of shape model' },
+  interamnia: { iau: 'PM: None defined' },
+  'europa-52': { iau: 'PM: Long axis of shape model' },
+  hygiea: { iau: 'PM: None defined' },
+  davida: { iau: 'PM: Arbitrary light-curve phase' },
 }
 
-export function primeMeridianLabel(id: PlanetId | SatelliteId, frame: RotationFrameChoice): string {
+export function primeMeridianLabel(
+  id: PlanetId | SatelliteId | AsteroidId,
+  frame: RotationFrameChoice,
+): string {
   const label = PRIME_MERIDIANS[id]
   const override =
     frame === 'magnetic' ? label.magnetic : frame === 'cloud' ? label.cloud : undefined

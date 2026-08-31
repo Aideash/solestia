@@ -29,7 +29,11 @@ function togglePlanet(id: string) {
   selectedPlanet.value = selectedPlanet.value === id ? null : id
 }
 
-function openPlanetSystem(id: string) {
+function openSystem(id: string) {
+  if (id === 'asteroid-belt') {
+    void router.push({ name: 'asteroid-belt' })
+    return
+  }
   const system = planetSystemFor(id as Parameters<typeof planetSystemFor>[0])
   if (system) void router.push({ name: system.routeName })
 }
@@ -53,7 +57,7 @@ function openPlanetSystem(id: string) {
         :selected-planet="selectedPlanet"
         :live="epoch.live.value"
         @select="togglePlanet"
-        @open="openPlanetSystem"
+        @open="openSystem"
       />
     </template>
     <template #controls>

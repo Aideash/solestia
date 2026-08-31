@@ -7,6 +7,12 @@ export const router = createRouter({
   routes: [
     { path: '/', name: 'solar', component: SolarSystemPage },
     {
+      path: '/asteroid-belt',
+      name: 'asteroid-belt',
+      component: () => import('./views/AsteroidBeltPage.vue'),
+      meta: { subtitle: 'Asteroid belt' },
+    },
+    {
       path: '/earth',
       name: 'earth-system',
       component: PlanetSystemPage,

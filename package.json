@@ -12,6 +12,7 @@
     "type-check": "vue-tsc -b",
     "preview": "vite preview",
     "check": "node --experimental-strip-types --no-warnings scripts/check-kepler.ts",
+    "generate:asteroids": "node --experimental-strip-types --no-warnings scripts/generate-asteroid-ephemerides.ts && prettier --write src/data/generated/asteroidEphemerides.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

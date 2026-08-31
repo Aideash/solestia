@@ -3,8 +3,22 @@ import { computed } from 'vue'
 import { PLANET_SYSTEMS } from '../data/planetSystems.ts'
 import type { PlanetState, SatelliteState } from '../lib/kepler.ts'
 
+type ClockBody = Pick<
+  PlanetState,
+  | 'name'
+  | 'color'
+  | 'symbol'
+  | 'yearFraction'
+  | 'retrograde'
+  | 'dayFraction'
+  | 'solsPerYear'
+  | 'subsolarLatitude'
+> & {
+  number?: number
+}
+
 const props = defineProps<{
-  planet: PlanetState | SatelliteState
+  planet: ClockBody | SatelliteState
   parentSystem?: keyof typeof PLANET_SYSTEMS
   mirroredLabel?: boolean
   selected?: boolean
@@ -13,6 +27,10 @@ const props = defineProps<{
 const emit = defineEmits<{ select: [] }>()
 
 const isSatellite = computed(() => 'parentFraction' in props.planet)
+const clockMark = computed(() => {
+  if (props.planet.symbol) return props.planet.symbol
+  return 'number' in props.planet && props.planet.number ? `${props.planet.number}` : null
+})
 const parent = computed(() => (props.parentSystem ? PLANET_SYSTEMS[props.parentSystem] : null))
 const orbitReversed = computed(
   () => 'orbitRetrograde' in props.planet && props.planet.orbitRetrograde,
@@ -146,14 +164,14 @@ const label = computed(() => {
     <title>{{ label }}</title>
 
     <text
-      v-if="planet.symbol"
+      v-if="clockMark"
       class="clock__symbol"
       :x="mirroredLabel ? 100 : 0"
       y="1em"
       :text-anchor="mirroredLabel ? 'end' : 'start'"
       fill="currentColor"
     >
-      {{ planet.symbol }}
+      {{ clockMark }}
     </text>
 
     <circle class="clock__edge" :cx="cx" :cy="cy" :r="rimRadius + rimWidth / 2 + 2" />

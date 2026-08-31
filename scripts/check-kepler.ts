@@ -6,6 +6,14 @@ import {
   frameFor,
 } from '../src/data/planets.ts'
 import { MOONS } from '../src/data/moons.ts'
+import { ASTEROIDS } from '../src/data/asteroids.ts'
+import {
+  ASTEROID_EPHEMERIS_HOLDOUTS,
+  ASTEROID_EPHEMERIS_SAMPLE_COUNT,
+  ASTEROID_EPHEMERIS_START_JD,
+  ASTEROID_EPHEMERIS_STEP_DAYS,
+  ASTEROID_EPHEMERIS_VALIDATION,
+} from '../src/data/generated/asteroidEphemerides.ts'
 import { PLANET_SYSTEM_BANDS, SOLAR_SYSTEM_BANDS } from '../src/data/orbitalBands.ts'
 import { PLANET_SYSTEMS } from '../src/data/planetSystems.ts'
 import {
@@ -17,8 +25,10 @@ import {
   planetSystemAt,
   satelliteIauFrame,
   solarSystemAt,
+  julianDate,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
+import { asteroidBeltAt, asteroidPositionAtJulianDate } from '../src/lib/asteroidEphemeris.ts'
 import { resolveOrbitalBands, resolveSolarOrbitalBands } from '../src/lib/orbitalBands.ts'
 import { radialScale, solarOrbitOuterR } from '../src/lib/radialScale.ts'
 
@@ -707,6 +717,122 @@ console.log(
 const INNER_RING = 10
 const OUTER_RING = 46
 const CENTER_DISC = 3.5
+
+const asteroidIds = new Set(ASTEROIDS.map((asteroid) => asteroid.id))
+const asteroidNumbers = new Set(ASTEROIDS.map((asteroid) => asteroid.number))
+assert(ASTEROIDS.length === 7, `expected seven large belt objects, got ${ASTEROIDS.length}`)
+assert(asteroidIds.size === ASTEROIDS.length, 'asteroid IDs must be unique')
+assert(asteroidNumbers.size === ASTEROIDS.length, 'asteroid numbers must be unique')
+const arbitraryAsteroidMeridians = ASTEROIDS.filter((asteroid) => !asteroid.primeMeridianDefined)
+assert(
+  arbitraryAsteroidMeridians.map((asteroid) => asteroid.id).join(',') === 'interamnia,hygiea',
+  `expected arbitrary meridians for Interamnia and Hygiea, got ${arbitraryAsteroidMeridians
+    .map((asteroid) => asteroid.id)
+    .join(',')}`,
+)
+for (const asteroid of arbitraryAsteroidMeridians) {
+  assert(asteroid.iau.w0 === 0, `${asteroid.name} arbitrary J2000 W0 should be zero`)
+}
+for (let index = 1; index < ASTEROIDS.length; index++) {
+  assert(
+    ASTEROIDS[index].a > ASTEROIDS[index - 1].a,
+    `asteroids must run inward to outward: ${ASTEROIDS[index - 1].id}, ${ASTEROIDS[index].id}`,
+  )
+}
+
+const asteroidEphemerisEndJd =
+  ASTEROID_EPHEMERIS_START_JD + (ASTEROID_EPHEMERIS_SAMPLE_COUNT - 1) * ASTEROID_EPHEMERIS_STEP_DAYS
+assert(
+  ASTEROID_EPHEMERIS_START_JD <= julianDate(new Date(ELEMENTS_VALID_FROM_MS)),
+  'asteroid ephemerides must cover the start of the app epoch',
+)
+assert(
+  asteroidEphemerisEndJd >= julianDate(new Date(ELEMENTS_VALID_TO_MS)),
+  'asteroid ephemerides must cover the end of the app epoch',
+)
+
+let worstAsteroidHoldoutError = 0
+for (const asteroid of ASTEROIDS) {
+  const validation = ASTEROID_EPHEMERIS_VALIDATION[asteroid.id]
+  assert(
+    validation.maxAngularErrorDeg < 0.25,
+    `${asteroid.name} generator holdouts exceed 0.25°: ${validation.maxAngularErrorDeg}°`,
+  )
+  assert(
+    validation.maxPositionErrorAu < 0.02,
+    `${asteroid.name} generator holdouts exceed 0.02 AU: ${validation.maxPositionErrorAu} AU`,
+  )
+  for (const holdout of ASTEROID_EPHEMERIS_HOLDOUTS[asteroid.id]) {
+    const actual = asteroidPositionAtJulianDate(asteroid.id, holdout.jd)
+    const error = Math.hypot(
+      actual.x - holdout.position[0],
+      actual.y - holdout.position[1],
+      actual.z - holdout.position[2],
+    )
+    worstAsteroidHoldoutError = Math.max(worstAsteroidHoldoutError, error)
+    assert(error < 0.02, `${asteroid.name} holdout position error is ${error} AU`)
+  }
+}
+
+for (const date of [new Date(ELEMENTS_VALID_FROM_MS), new Date(), new Date(ELEMENTS_VALID_TO_MS)]) {
+  const snapshot = asteroidBeltAt(date)
+  assert(
+    snapshot.asteroids.length === ASTEROIDS.length,
+    `asteroids missing at ${date.toISOString()}`,
+  )
+  for (const asteroid of snapshot.asteroids) {
+    assert(
+      Number.isFinite(asteroid.longitude) &&
+        Number.isFinite(asteroid.distanceAu) &&
+        Number.isFinite(asteroid.yearFraction) &&
+        Number.isFinite(asteroid.dayFraction) &&
+        Number.isFinite(asteroid.subsolarLatitude) &&
+        Number.isFinite(asteroid.facing.longitude) &&
+        Number.isFinite(asteroid.perihelionLongitude) &&
+        asteroid.distanceAu > 1.8 &&
+        asteroid.distanceAu < 4 &&
+        asteroid.yearFraction >= 0 &&
+        asteroid.yearFraction < 1 &&
+        asteroid.dayFraction >= 0 &&
+        asteroid.dayFraction < 1 &&
+        asteroid.facing.inPlane >= 0 &&
+        asteroid.facing.inPlane <= 1,
+      `${asteroid.name} has an implausible state at ${date.toISOString()}`,
+    )
+    assert(
+      asteroid.siderealRotationDays > 0 && asteroid.solarDayDays > 0,
+      `${asteroid.name} rotation periods should be positive`,
+    )
+  }
+}
+
+const asteroidRotationEpoch = asteroidBeltAt(new Date('2026-01-01T00:00:00Z'))
+const hygiea = asteroidRotationEpoch.asteroids.find((asteroid) => asteroid.id === 'hygiea')
+const interamnia = asteroidRotationEpoch.asteroids.find((asteroid) => asteroid.id === 'interamnia')
+assert(hygiea && interamnia, 'Hygiea or Interamnia missing from rotation snapshot')
+assert(hygiea.retrograde, 'Hygiea should rotate retrograde')
+assert(
+  Math.abs(hygiea.siderealRotationDays * 24 - 13.82559) < 1e-6,
+  `Hygiea rotation should be 13.82559 h, got ${hygiea.siderealRotationDays * 24}`,
+)
+assert(
+  Math.abs(interamnia.siderealRotationDays * 24 - 8.71234) < 1e-6,
+  `Interamnia rotation should be 8.71234 h, got ${interamnia.siderealRotationDays * 24}`,
+)
+const asteroidRotationHourLater = asteroidBeltAt(new Date('2026-01-01T01:00:00Z'))
+for (const asteroid of [hygiea, interamnia]) {
+  const later = asteroidRotationHourLater.asteroids.find((item) => item.id === asteroid.id)
+  assert(later, `${asteroid.name} missing one hour later`)
+  const progress = fractionGap(asteroid.dayFraction, later.dayFraction)
+  assert(
+    progress > 0.05 && progress < 0.15,
+    `${asteroid.name} clock should advance plausibly in one hour, got ${progress}`,
+  )
+}
+
+console.log(
+  `ok  asteroid ephemerides and rotation cover 1800–2050; seven unique bodies, worst stored holdout ${worstAsteroidHoldoutError.toExponential(2)} AU`,
+)
 
 const geometryEpoch = new Date('2026-01-01T00:00:00Z')
 const systems: { name: string; orbits: { id: string; a: number; e: number }[] }[] = [
