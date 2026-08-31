@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { PLANET_SYSTEM_BANDS } from '../data/orbitalBands.ts'
 import { PLANET_SYSTEMS, planetSystemFor, type ViewPlane } from '../data/planetSystems.ts'
-import { SELECTION_NOTES } from '../data/selectionNotes.ts'
+import { SELECTION_NOTES, primeMeridianLabel } from '../data/selectionNotes.ts'
 import {
   eccentricityWobble,
   orbitPoint,
@@ -514,6 +514,11 @@ const upTick = computed(() => {
 
 const viewBoxHeight = size + 2 * padY
 
+/** Satellite systems are always drawn in the parent's IAU frame. */
+const rotationFrame = computed(() =>
+  isPlanetSystemSnapshot(props.snapshot) ? 'iau' : props.snapshot.rotationFrame,
+)
+
 /** HTML callout pinned to the selected disc; omitted when that body has no notes. */
 const selectionCallout = computed(() => {
   if (!showNotes.value) return null
@@ -527,6 +532,7 @@ const selectionCallout = computed(() => {
   return {
     name: ring.planet.name,
     paragraphs,
+    footer: primeMeridianLabel(id as keyof typeof SELECTION_NOTES, rotationFrame.value),
     left: `${x}%`,
     top: `${((y + padY) / viewBoxHeight) * 100}%`,
     flipLeft: x >= cx,
@@ -922,8 +928,11 @@ const rows = computed(() =>
         role="note"
         :aria-label="`Notes for ${selectionCallout.name}`"
       >
-        <p class="orrery__note-title">{{ selectionCallout.name }}</p>
-        <p v-for="(paragraph, i) in selectionCallout.paragraphs" :key="i">{{ paragraph }}</p>
+        <div class="orrery__note-content">
+          <p class="orrery__note-title">{{ selectionCallout.name }}</p>
+          <p v-for="(paragraph, i) in selectionCallout.paragraphs" :key="i">{{ paragraph }}</p>
+        </div>
+        <div class="orrery__note-footer">{{ selectionCallout.footer }}</div>
       </aside>
     </div>
 
@@ -1275,20 +1284,16 @@ const rows = computed(() =>
 .orrery__note {
   position: absolute;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   width: min(18.5rem, 70%);
   max-height: min(12rem, 45%);
   overflow: auto;
-  padding: 0.65rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: $radius-sm;
   background: var(--bg-raised);
   box-shadow: 0 0.5rem 1.25rem rgb(0 0 0 / 35%);
-  color: var(--text);
-  font-size: 0.75rem;
-  font-weight: 400;
-  line-height: 1.45;
-  text-align: left;
   transform: translate(0.45rem, 0.45rem);
 }
 
@@ -1304,6 +1309,16 @@ const rows = computed(() =>
   transform: translate(calc(-100% - 0.45rem), calc(-100% - 0.45rem));
 }
 
+.orrery__note-content {
+  overflow: auto;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  color: var(--text);
+}
+
 .orrery__note p {
   margin: 0 0 0.55rem;
 }
@@ -1315,6 +1330,17 @@ const rows = computed(() =>
 .orrery__note-title {
   margin: 0 0 0.4rem;
   font-weight: 600;
+}
+
+.orrery__note-footer {
+  margin-top: 0.4rem;
+  padding: 2px 0.75rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--bg) 75%, var(--bg-raised));
+  color: $color-text-muted;
 }
 
 .orrery__settings {

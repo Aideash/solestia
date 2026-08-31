@@ -1,5 +1,5 @@
 import type { SatelliteId } from './moons.ts'
-import type { PlanetId } from './planets.ts'
+import type { PlanetId, RotationFrameChoice } from './planets.ts'
 
 /**
  * Short notes for the selected-body callout, limited to what is peculiar to
@@ -16,6 +16,10 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
   venus: [
     'Venus rotates retrograde, so the Sun rises in the west.',
     'Retrograde spin makes the solar day shorter than the sidereal day: the Sun returns to the same meridian before the planet has finished one turn relative to the stars.',
+  ],
+  mars: [
+    'Perihelion falls in southern summer, so southern seasons run shorter and hotter — the asymmetry behind the planet-encircling dust storms.',
+    'The sol is 24h 37m and the tilt 25.2°, both close to Earth’s, but with no large moon to steady it the axis has wandered chaotically over millions of years.',
   ],
   jupiter: [
     'IAU longitude is System III, the magnetic/radio frame; the magnetic picker is the same W.',
@@ -59,6 +63,9 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
     'At 1.9 million km the Sun’s pull begins to compete with Jupiter’s flattening, so its Laplace plane is tipped away from Io’s toward the ecliptic.',
   ],
   mimas: [
+    'Cassini measured a forced spin libration of about 50 arcmin, twice the hydrostatic value. That extra wobble, and the periapsis drift it produces, point to a global ocean 20–30 km down — likely younger than 25 million years, still too new to have resurfaced the ice.',
+    'A 2:1 inner Lindblad resonance with Mimas holds the outer edge of Saturn’s B ring and opens the Huygens gap at the inner rim of the Cassini Division; weaker Mimas resonances raise spiral density waves across the rings.',
+    'A 4:2 inclination resonance with Tethys swings Mimas’s orbital longitude by about ±43° over 71 years. The IAU meridian carries that motion as a 44.85° term, not a spin wobble — a uniform month cannot follow it, so the facing here is only exact on average.',
     'Herschel crater is about 130 km wide, nearly a third of Mimas’s diameter; the impact that made it came close to breaking the moon apart.',
   ],
   enceladus: [
@@ -113,4 +120,55 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
     'Nereid’s eccentricity is about 0.75: its distance from Neptune changes by roughly a factor of seven between perineptune and aponeptune.',
     'It rotates in 11.594 hours instead of keeping one face toward Neptune. No standard pole or prime-meridian solution exists, so this clock assumes a prograde orbit-normal pole and an arbitrary J2000 phase.',
   ],
+}
+
+/**
+ * What anchors each body's zero of longitude, for the callout footer. Keyed the
+ * same way the frames are in `planets.ts`: `magnetic` and `cloud` are overrides
+ * and anything missing falls back to `iau`.
+ *
+ * Sources are the IAU WGCCRE reports (Archinal et al.), Table 1 and Table 2
+ * footnotes. On a synchronous moon 0° is the sub-planet meridian, and a named
+ * crater only pins that system to the surface — it generally sits nowhere near
+ * the meridian it fixes, Cilix anchoring Europa from 182° W, almost antipodal
+ * to Jupiter. Nereid, which has no orientation model at all, says so.
+ */
+type MeridianLabel = { iau: string; magnetic?: string; cloud?: string }
+
+export const PRIME_MERIDIANS: Record<PlanetId | SatelliteId, MeridianLabel> = {
+  mercury: { iau: 'PM: Hun Kal at 20° W' },
+  venus: { iau: 'PM: Ariadne crater' },
+  earth: { iau: 'PM: IERS reference meridian' },
+  mars: { iau: 'PM: Viking 1 lander' },
+  jupiter: { iau: 'PM: System III (magnetic)', cloud: 'PM: System I (clouds)' },
+  saturn: { iau: 'PM: System III (magnetic)', cloud: 'PM: System I (clouds)' },
+  uranus: { iau: 'PM: System III (magnetic)' },
+  neptune: { iau: 'PM: Karkoschka’s cloud', magnetic: 'PM: System III (radio)' },
+  moon: { iau: 'PM: Mean Earth direction' },
+  io: { iau: 'PM: Jupiter facing' },
+  europa: { iau: 'PM: Jupiter facing, Cilix at 182° W' },
+  ganymede: { iau: 'PM: Jupiter facing, Anat at 128° W' },
+  callisto: { iau: 'PM: Jupiter facing, Saga at 326° W' },
+  mimas: { iau: 'PM: Saturn facing, Palomides at 162° W' },
+  enceladus: { iau: 'PM: Saturn facing, Salih at 5° W' },
+  tethys: { iau: 'PM: Saturn facing, Arete at 299° W' },
+  dione: { iau: 'PM: Saturn facing, Palinurus at 63° W' },
+  rhea: { iau: 'PM: Saturn facing, Tore at 340° W' },
+  titan: { iau: 'PM: Saturn facing' },
+  iapetus: { iau: 'PM: Saturn facing, Almeric at 276° W' },
+  miranda: { iau: 'PM: Uranus facing' },
+  ariel: { iau: 'PM: Uranus facing' },
+  umbriel: { iau: 'PM: Uranus facing' },
+  titania: { iau: 'PM: Uranus facing' },
+  oberon: { iau: 'PM: Uranus facing' },
+  proteus: { iau: 'PM: Neptune facing' },
+  triton: { iau: 'PM: Neptune facing' },
+  nereid: { iau: 'PM: None defined' },
+}
+
+export function primeMeridianLabel(id: PlanetId | SatelliteId, frame: RotationFrameChoice): string {
+  const label = PRIME_MERIDIANS[id]
+  const override =
+    frame === 'magnetic' ? label.magnetic : frame === 'cloud' ? label.cloud : undefined
+  return override ?? label.iau
 }

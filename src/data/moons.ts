@@ -3,7 +3,8 @@
  * Planetary Satellite Mean Elements (DE405/LE405 for the Moon, JUP365 for the
  * Galileans, SAT441 local-Laplace-plane elements for Saturn's seven moons over
  * 160 km in radius, URA182 equatorial elements for the five major Uranian
- * moons, and NEP081 local-Laplace-plane elements for Proteus, Triton, and Nereid).
+ * moons, and NEP081 local-Laplace-plane elements for Proteus and Nereid;
+ * Triton is the one exception, taken from the NEP097 row).
  * The Moon is referred to the J2000 ecliptic; the Galileans use their local
  * Laplace planes; the Uranian majors use Uranus's equator.
  * https://ssd.jpl.nasa.gov/sats/elem/sep.html
@@ -264,6 +265,15 @@ export const MOONS: Satellite[] = [
   },
   // SAT441 mean elements in local Laplace planes. Its period column already
   // matches the IAU synchronous spin rates, so these periods are sidereal.
+  //
+  // Every M0 here is solved from a Horizons state vector at the epoch rather
+  // than copied from the table. Unlike the Jovian rows, which reproduce
+  // Horizons to 0.1°, the tabulated Saturnian angles put these moons 5° to
+  // 157° along their orbits — a least-squares precessing ellipse cannot hold
+  // the phase of bodies this deep in resonance, which is what JPL means by
+  // warning that the table describes orbit shape and orientation only. The
+  // remaining elements are the table's; only the epoch phase is replaced, and
+  // without it the synchronous moons face the wrong way.
   {
     id: 'mimas',
     name: 'Mimas',
@@ -283,7 +293,14 @@ export const MOONS: Satellite[] = [
       aKm: 186000,
       e: 0.02,
       omega0: 160.4,
-      M0: 275.3,
+      // Mimas alone is anchored to its mean longitude rather than its J2000
+      // position. The 44.85° sin S5 term in its IAU prime meridian is not a spin
+      // wobble but the Mimas–Tethys resonance swinging its orbital longitude
+      // ±43° over 71 years, which a uniform mean motion cannot follow: matching
+      // the J2000 position instead imports that excursion and leaves the moon
+      // facing 36° off Saturn forever. Sitting at the midpoint of the libration
+      // keeps the lock exact and splits the longitude error either way.
+      M0: 289.103,
       i0: 1.6,
       Omega0: 66.2,
       periodDays: 0.942422,
@@ -315,7 +332,7 @@ export const MOONS: Satellite[] = [
       aKm: 238400,
       e: 0.005,
       omega0: 119.5,
-      M0: 57,
+      M0: 62.452,
       i0: 0,
       Omega0: 0,
       periodDays: 1.370218,
@@ -347,7 +364,7 @@ export const MOONS: Satellite[] = [
       aKm: 295000,
       e: 0.001,
       omega0: 335.3,
-      M0: 0,
+      M0: 298.824,
       i0: 1.1,
       Omega0: 273,
       periodDays: 1.887802,
@@ -379,7 +396,7 @@ export const MOONS: Satellite[] = [
       aKm: 377700,
       e: 0.002,
       omega0: 116,
-      M0: 212,
+      M0: 60.538,
       i0: 0,
       Omega0: 0,
       periodDays: 2.736916,
@@ -411,7 +428,7 @@ export const MOONS: Satellite[] = [
       aKm: 527200,
       e: 0.001,
       omega0: 44.3,
-      M0: 31.5,
+      M0: 234.211,
       i0: 0.3,
       Omega0: 133.7,
       periodDays: 4.517503,
@@ -443,7 +460,7 @@ export const MOONS: Satellite[] = [
       aKm: 1221900,
       e: 0.029,
       omega0: 78.3,
-      M0: 11.7,
+      M0: 217.698,
       i0: 0.3,
       Omega0: 78.6,
       periodDays: 15.945448,
@@ -475,7 +492,7 @@ export const MOONS: Satellite[] = [
       aKm: 3561700,
       e: 0.028,
       omega0: 254.5,
-      M0: 74.8,
+      M0: 219.835,
       i0: 7.6,
       Omega0: 86.5,
       periodDays: 79.331002,
@@ -703,13 +720,15 @@ export const MOONS: Satellite[] = [
       wDot: -61.2572637,
     },
     elements: {
-      aKm: 354759,
+      // NEP097 row, read with the same plain convention as every other moon: an
+      // earlier NEP081 reading of these angles put Triton 122° along its orbit
+      // from the ephemeris, which swung the prime meridian off Neptune.
+      aKm: 354800,
       e: 0.00001,
-      // NEP081 uses ϖ = Ω − ω and λ = ϖ − M for retrograde Triton.
-      omega0: 289.0733,
-      M0: 7.7433,
-      i0: 156.865,
-      Omega0: 177.6075,
+      omega0: 0,
+      M0: 63,
+      i0: 157.3,
+      Omega0: 178.1,
       periodDays: 360 / 61.2572638,
       periodIsSidereal: true,
       orbitDirection: -1,
@@ -717,8 +736,8 @@ export const MOONS: Satellite[] = [
       nodePeriodYears: 360 / 0.5237,
       apsisDirection: 1,
       nodeDirection: 1,
-      laplaceRa: 299.456,
-      laplaceDec: 43.4141,
+      laplaceRa: 299.8,
+      laplaceDec: 43.1,
     },
   },
   {

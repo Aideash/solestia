@@ -490,6 +490,21 @@ for (const saturnMoon of saturnJ2000.satellites) {
     `${saturnMoon.name} is locked, so its Saturn day should be infinite, got ${saturnMoon.parentDayDays}`,
   )
 }
+// These moons are all synchronous, so Saturn has to stand on the prime
+// meridian. The tabulated JPL epoch angles put them up to 157° along their
+// orbits, which leaves the lock intact but swings the meridian away from
+// Saturn, so the phases come from Horizons instead; this guards that
+// substitution.
+const saturnLate = planetSystemAt(new Date('2049-01-01T12:00:00Z'), 'saturn')
+for (const snapshot of [saturnJ2000, saturnLate]) {
+  for (const moon of snapshot.satellites) {
+    assert(
+      fractionGap(moon.parentFraction, 0.5) < 0.03,
+      `${moon.name} should keep Saturn on its prime meridian in ${snapshot.at.getUTCFullYear()}, got parent fraction ${moon.parentFraction.toFixed(4)}`,
+    )
+  }
+}
+
 const mimas = saturnJ2000.satellites[0]
 const iapetus = saturnJ2000.satellites.at(-1)
 assert(mimas?.id === 'mimas', 'Mimas should be Saturn’s innermost selected moon')
@@ -636,6 +651,13 @@ const tritonStep = wrapRadSigned(tritonQuarter.equatorLongitude - triton.equator
 assert(
   tritonStep < 0 && Math.abs(Math.abs(tritonStep) - Math.PI / 2) < 0.2,
   `Triton should move retrograde by ~90° in a quarter month, moved ${deg(tritonStep).toFixed(1)}°`,
+)
+// Triton has no reference feature, but its IAU meridian still tracks the
+// sub-Neptune point: reading the elements under the wrong convention leaves the
+// lock intact and parks the meridian a third of a turn away from Neptune.
+assert(
+  fractionGap(triton.parentFraction, 0.5) < 0.02,
+  `Triton should keep Neptune on its prime meridian, got parent fraction ${triton.parentFraction.toFixed(4)}`,
 )
 const tritonLate = planetSystemAt(new Date('2049-01-01T12:00:00Z'), 'neptune').satellites.find(
   (m) => m.id === 'triton',
