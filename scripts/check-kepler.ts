@@ -6,6 +6,8 @@ import {
   frameFor,
 } from '../src/data/planets.ts'
 import { MOONS } from '../src/data/moons.ts'
+import { PLANET_SYSTEM_BANDS } from '../src/data/orbitalBands.ts'
+import { PLANET_SYSTEMS } from '../src/data/planetSystems.ts'
 import {
   bodyFrame,
   clampEpoch,
@@ -17,6 +19,7 @@ import {
   solarSystemAt,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
+import { resolveOrbitalBands } from '../src/lib/orbitalBands.ts'
 import { radialScale } from '../src/lib/radialScale.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -456,6 +459,48 @@ console.log(
 console.log(
   `ok  Earth–Moon system at J2000: month ${moon.siderealOrbitDays.toFixed(3)} d, Earth-facing offset ${moonInward.toFixed(1)}°`,
 )
+
+const saturnJ2000 = planetSystemAt(new Date('2000-01-01T12:00:00Z'), 'saturn')
+assert(
+  saturnJ2000.satellites.length === 7,
+  `expected 7 selected Saturnian moons, got ${saturnJ2000.satellites.length}`,
+)
+const SATURNIAN_SIDEREAL_MONTHS: Record<string, number> = {
+  mimas: 0.942422,
+  enceladus: 1.370218,
+  tethys: 1.887802,
+  dione: 2.736916,
+  rhea: 4.517503,
+  titan: 15.945448,
+  iapetus: 79.331002,
+}
+for (const saturnMoon of saturnJ2000.satellites) {
+  const expected = SATURNIAN_SIDEREAL_MONTHS[saturnMoon.id]
+  assert(expected, `${saturnMoon.name} missing from Saturnian sidereal-month table`)
+  assert(
+    Math.abs(saturnMoon.siderealOrbitDays - expected) < 1e-6,
+    `${saturnMoon.name} sidereal month should be ~${expected} d, got ${saturnMoon.siderealOrbitDays}`,
+  )
+  assert(
+    Math.abs(saturnMoon.siderealOrbitDays / saturnMoon.siderealRotationDays - 1) < 1e-4,
+    `${saturnMoon.name} should be synchronous, spin–orbit ratio ${saturnMoon.siderealOrbitDays / saturnMoon.siderealRotationDays}`,
+  )
+  assert(
+    saturnMoon.parentDayDays === Number.POSITIVE_INFINITY,
+    `${saturnMoon.name} is locked, so its Saturn day should be infinite, got ${saturnMoon.parentDayDays}`,
+  )
+}
+const mimas = saturnJ2000.satellites[0]
+const iapetus = saturnJ2000.satellites.at(-1)
+assert(mimas?.id === 'mimas', 'Mimas should be Saturn’s innermost selected moon')
+assert(iapetus?.id === 'iapetus', 'Iapetus should be Saturn’s outermost selected moon')
+assert(mimas.aKm === 186000, `Mimas a should be 186000 km, got ${mimas.aKm}`)
+assert(iapetus.aKm === 3561700, `Iapetus a should be 3561700 km, got ${iapetus.aKm}`)
+
+console.log(
+  `ok  Saturnian moons at J2000: Mimas month ${mimas.siderealOrbitDays.toFixed(6)} d, Iapetus month ${iapetus.siderealOrbitDays.toFixed(6)} d`,
+)
+
 const uranusJ2000 = planetSystemAt(new Date('2000-01-01T12:00:00Z'), 'uranus')
 assert(
   uranusJ2000.satellites.length === 5,
@@ -647,7 +692,7 @@ const systems: { name: string; orbits: { id: string; a: number; e: number }[] }[
     name: 'solar',
     orbits: solarSystemAt(geometryEpoch).planets.map((p) => ({ id: p.id, a: p.a, e: p.e })),
   },
-  ...(['earth', 'jupiter', 'uranus', 'neptune'] as const).map((id) => ({
+  ...(['earth', 'jupiter', 'saturn', 'uranus', 'neptune'] as const).map((id) => ({
     name: id,
     orbits: planetSystemAt(geometryEpoch, id).satellites.map((m) => ({
       id: m.id,
@@ -697,6 +742,39 @@ for (const system of systems) {
     `${system.name}: the outermost apoapsis should land on the outer ring, got ${previousApoapsis.toFixed(4)}`,
   )
 }
+
+/**
+ * Bands are catalogued in km while orbits carry AU, so this runs the same
+ * resolver the orrery does: a band fed the wrong unit lands an astronomical
+ * unit away from the frame rather than between the disc and the first moon.
+ */
+const saturnOrbits = saturnJ2000.satellites.map((m) => ({ a: m.a, e: m.e }))
+const saturnScale = radialScale(saturnOrbits, INNER_RING, OUTER_RING)
+const mimasPeriapsis = saturnScale(mimas.a * (1 - mimas.e))
+const saturnBands = resolveOrbitalBands(
+  PLANET_SYSTEM_BANDS.saturn ?? [],
+  saturnOrbits,
+  PLANET_SYSTEMS.saturn.radiusKm,
+  INNER_RING,
+  OUTER_RING,
+  CENTER_DISC,
+)
+assert(saturnBands.length === 1, `expected one Saturn ring band, got ${saturnBands.length}`)
+const saturnRings = saturnBands[0]
+const ringInner = saturnRings.radius - saturnRings.width / 2
+const ringOuter = saturnRings.radius + saturnRings.width / 2
+assert(
+  ringInner >= CENTER_DISC,
+  `Saturn’s inner ring edge should clear the planet disc, got ${ringInner.toFixed(2)}`,
+)
+assert(
+  saturnRings.width > 0 && ringOuter < mimasPeriapsis,
+  `Saturn’s rings should form a positive band inside Mimas, got ${ringInner.toFixed(2)}–${ringOuter.toFixed(2)} against ${mimasPeriapsis.toFixed(2)}`,
+)
+
+console.log(
+  `ok  Saturn’s rings draw from ${ringInner.toFixed(2)} to ${ringOuter.toFixed(2)} of ${OUTER_RING} units, inside Mimas at ${mimasPeriapsis.toFixed(2)}`,
+)
 
 const neptuneScale = radialScale(
   systems.find((system) => system.name === 'neptune')!.orbits,

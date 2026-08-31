@@ -1,7 +1,7 @@
 import type { SatelliteId } from './moons.ts'
 import type { PlanetId } from './planets.ts'
 
-export type PlanetSystemId = 'earth' | 'jupiter' | 'uranus' | 'neptune'
+export type PlanetSystemId = 'earth' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
 
 export const VIEW_PLANE_CHOICES = ['ecliptic', 'equator'] as const
 export type ViewPlane = (typeof VIEW_PLANE_CHOICES)[number]
@@ -56,6 +56,22 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     periapsisName: 'perijove',
     apoapsisName: 'apojove',
     defaultViewPlane: 'ecliptic',
+  },
+  saturn: {
+    id: 'saturn',
+    name: 'Saturn',
+    symbol: '♄',
+    routeName: 'saturn-system',
+    path: '/saturn',
+    radiusKm: 60268,
+    radiusSymbol: 'R_S',
+    satelliteIds: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'iapetus'],
+    innerSatelliteCount: 3,
+    orbitGroupName: 'the seven largest Saturnian moons',
+    orbitPlaneName: 'each moon’s local Laplace plane',
+    periapsisName: 'perisaturnium',
+    apoapsisName: 'aposaturnium',
+    defaultViewPlane: 'equator',
   },
   uranus: {
     id: 'uranus',

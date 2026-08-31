@@ -66,3 +66,25 @@ export function radialScale(
   const fit = widest > 0 ? outerR / widest : 1
   return (distance) => interpolate(distance) * fit
 }
+
+/**
+ * Gives a compressed orbital scale a physical inner anchor, such as a
+ * planet's surface at the edge of its center disc. Distances beyond the join
+ * retain the original scale; distances inside it interpolate to the anchor.
+ */
+export function extendRadialScaleInward(
+  scale: (distance: number) => number,
+  anchorDistance: number,
+  anchorRadius: number,
+  joinDistance: number,
+): (distance: number) => number {
+  const joinRadius = scale(joinDistance)
+  const span = joinDistance - anchorDistance
+  if (span <= 0) return scale
+
+  return (distance) => {
+    if (distance >= joinDistance) return scale(distance)
+    const t = (Math.max(distance, anchorDistance) - anchorDistance) / span
+    return anchorRadius + t * (joinRadius - anchorRadius)
+  }
+}

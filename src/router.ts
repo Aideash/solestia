@@ -21,6 +21,13 @@ export const router = createRouter({
       meta: { subtitle: 'Jupiter' },
     },
     {
+      path: '/saturn',
+      name: 'saturn-system',
+      component: PlanetSystemPage,
+      props: { systemId: 'saturn' },
+      meta: { subtitle: 'Saturn' },
+    },
+    {
       path: '/uranus',
       name: 'uranus-system',
       component: PlanetSystemPage,

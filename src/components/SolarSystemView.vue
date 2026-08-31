@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { PLANET_SYSTEM_BANDS } from '../data/orbitalBands.ts'
 import { PLANET_SYSTEMS, planetSystemFor, type ViewPlane } from '../data/planetSystems.ts'
 import { SELECTION_NOTES } from '../data/selectionNotes.ts'
 import {
@@ -11,6 +12,7 @@ import {
   type SatelliteState,
   type SolarSystemSnapshot,
 } from '../lib/kepler.ts'
+import { resolveOrbitalBands } from '../lib/orbitalBands.ts'
 import { radialScale, type OrbitExtent } from '../lib/radialScale.ts'
 
 const props = defineProps<{
@@ -391,6 +393,21 @@ function simpleRatio(value: number): string | null {
   return `${bestNum / g}:${bestDen / g}`
 }
 
+const distanceScale = computed(() => radialScale(bodies.value, innerR, outerR))
+
+const orbitalBands = computed(() => {
+  const system = planetSystem.value
+  if (!system) return []
+  return resolveOrbitalBands(
+    PLANET_SYSTEM_BANDS[system.id] ?? [],
+    bodies.value,
+    system.radiusKm,
+    innerR,
+    outerR,
+    sunR,
+  )
+})
+
 const rings = computed(() => {
   const earthPerihelionLongitude = props.snapshot.earthPerihelionLongitude
   const equatorOrigin = isPlanetSystemSnapshot(props.snapshot)
@@ -399,7 +416,7 @@ const rings = computed(() => {
   const origin = useEquator.value ? equatorOrigin : earthPerihelionLongitude
   const frameLabel = isPlanetSystemSnapshot(props.snapshot) ? 'IAU' : props.snapshot.rotationFrame
   const planeWord = useEquator.value ? 'equatorial' : 'ecliptic'
-  const scale = radialScale(bodies.value, innerR, outerR)
+  const scale = distanceScale.value
   return bodies.value.map((planet) => {
     const isMoon = 'equatorLongitude' in planet
     const bodyOffset =
@@ -763,8 +780,23 @@ const rows = computed(() =>
                 : `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is at the top. The Sun is marked at the anti-${planetSystem?.name} direction. Each moon’s whisker shows where its prime meridian points.`
               : 'Orbits of Mercury through Neptune about the focus at the Sun. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is at the top, aphelion at the bottom. Each planet sits at its current distance and longitude, with a short whisker showing where its prime meridian points. The Sun at the center carries the same whisker for its Carrington prime meridian.'
           }}
+          <template v-if="orbitalBands.length">
+            The shaded annulus marks {{ orbitalBands.map((band) => band.name).join(', ') }} at its
+            physical radial extent.
+          </template>
         </desc>
         <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
+        <g v-if="orbitalBands.length" class="orbital-bands" aria-hidden="true">
+          <circle
+            v-for="band in orbitalBands"
+            :key="band.id"
+            class="orbital-band"
+            :cx="cx"
+            :cy="cy"
+            :r="band.radius"
+            :stroke-width="band.width"
+          />
+        </g>
         <template v-if="!isSatelliteSystem">
           <text class="axis-label" :x="perihelionMark.x" :y="perihelionMark.y" text-anchor="middle">
             ⊕
@@ -1478,6 +1510,15 @@ const rows = computed(() =>
   fill: none;
   stroke: var(--border);
   stroke-width: 0.35;
+}
+
+.orbital-bands {
+  pointer-events: none;
+}
+
+.orbital-band {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .axis {

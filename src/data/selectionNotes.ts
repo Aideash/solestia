@@ -30,6 +30,7 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
   saturn: [
     'IAU and magnetic longitude are System III.',
     'Cloud is the equatorial System I period of 10h 14m. The IAU no longer tabulates that rate; it is kept here so the cloud picker still has an optical W.',
+    'Double-click Saturn to open the system of its seven largest moons.',
   ],
   uranus: [
     'Uranus rotates retrograde. It has no separate cloud or magnetic W, so those pickers stay on the IAU cartographic meridian.',
@@ -56,6 +57,27 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId, string[]>> 
   callisto: [
     'The one Galilean outside the 4:2:1 chain, so nothing forces its eccentricity — little tidal heating, and one of the most heavily cratered surfaces known.',
     'At 1.9 million km the Sun’s pull begins to compete with Jupiter’s flattening, so its Laplace plane is tipped away from Io’s toward the ecliptic.',
+  ],
+  mimas: [
+    'Herschel crater is about 130 km wide, nearly a third of Mimas’s diameter; the impact that made it came close to breaking the moon apart.',
+  ],
+  enceladus: [
+    'Jets erupt from fractures near the south pole, feeding Saturn’s E ring with ice from a global subsurface ocean.',
+  ],
+  tethys: [
+    'Odysseus crater spans almost two fifths of the moon, while Ithaca Chasma runs most of the way around it.',
+  ],
+  dione: [
+    'Bright ice cliffs cross its trailing hemisphere: fractures once mistaken for wispy surface deposits in distant Voyager images.',
+  ],
+  rhea: [
+    'Saturn’s second-largest moon is an old, heavily cratered ice world with an extremely thin oxygen and carbon-dioxide exosphere.',
+  ],
+  titan: [
+    'The only moon with a dense atmosphere and the only world besides Earth known to have stable surface lakes and seas, filled with methane and ethane.',
+  ],
+  iapetus: [
+    'One hemisphere is about ten times darker than the other, and a ridge up to roughly 20 km high follows much of the equator.',
   ],
   moon: [
     'Alone among the moons here, the orbit is referred to the ecliptic rather than a parent-linked plane: the 5.2° inclination is tilt from Earth’s orbit, and the node regresses once every 18.6 years — the cycle that walks eclipse seasons through the year.',

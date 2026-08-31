@@ -1,8 +1,9 @@
 /**
  * Natural satellites: mean elements at 2000-01-01.5 TDB from JPL SSD
  * Planetary Satellite Mean Elements (DE405/LE405 for the Moon, JUP365 for the
- * Galileans, URA182 equatorial elements for the five major Uranian moons, and
- * NEP081 local-Laplace-plane elements for Proteus, Triton, and Nereid).
+ * Galileans, SAT441 local-Laplace-plane elements for Saturn's seven moons over
+ * 160 km in radius, URA182 equatorial elements for the five major Uranian
+ * moons, and NEP081 local-Laplace-plane elements for Proteus, Triton, and Nereid).
  * The Moon is referred to the J2000 ecliptic; the Galileans use their local
  * Laplace planes; the Uranian majors use Uranus's equator.
  * https://ssd.jpl.nasa.gov/sats/elem/sep.html
@@ -12,9 +13,10 @@
  * ellipses will slowly drift from the Laplace 4:2:1 resonance.
  *
  * Poles and prime meridians: IAU WGCCRE 2015 / NAIF pck00011.tpc for
- * BODY501 … BODY504, BODY701 … BODY705, BODY801, and BODY808; IAU 2009's
- * periodic series for the Moon. Nereid's documented approximation is the
- * exception because the IAU provides no orientation model for BODY802.
+ * BODY501 … BODY504, BODY601 … BODY606, BODY608, BODY701 … BODY705, BODY801,
+ * and BODY808; IAU 2009's periodic series for the Moon. Nereid's documented
+ * approximation is the exception because the IAU provides no orientation
+ * model for BODY802.
  */
 
 import type { PlanetSystemId } from './planetSystems.ts'
@@ -26,6 +28,13 @@ export type SatelliteId =
   | 'europa'
   | 'ganymede'
   | 'callisto'
+  | 'mimas'
+  | 'enceladus'
+  | 'tethys'
+  | 'dione'
+  | 'rhea'
+  | 'titan'
+  | 'iapetus'
   | 'miranda'
   | 'ariel'
   | 'umbriel'
@@ -251,6 +260,232 @@ export const MOONS: Satellite[] = [
       nodeDirection: -1,
       laplaceRa: 268.7,
       laplaceDec: 64.8,
+    },
+  },
+  // SAT441 mean elements in local Laplace planes. Its period column already
+  // matches the IAU synchronous spin rates, so these periods are sidereal.
+  {
+    id: 'mimas',
+    name: 'Mimas',
+    color: '#c8c3b8',
+    symbol: 'Ⅰ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(381.994555), theta: 28.0703, phi: 79.5174 },
+    iau: {
+      ra0: 40.66,
+      raDot: -0.036,
+      dec0: 83.52,
+      decDot: -0.004,
+      w0: 333.46,
+      wDot: 381.994555,
+    },
+    elements: {
+      aKm: 186000,
+      e: 0.02,
+      omega0: 160.4,
+      M0: 275.3,
+      i0: 1.6,
+      Omega0: 66.2,
+      periodDays: 0.942422,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 0.493,
+      nodePeriodYears: 0.986,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 40.6,
+      laplaceDec: 83.5,
+    },
+  },
+  {
+    id: 'enceladus',
+    name: 'Enceladus',
+    color: '#eef2ef',
+    symbol: 'Ⅱ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(262.7318996), theta: 28.0703, phi: 79.5174 },
+    iau: {
+      ra0: 40.66,
+      raDot: -0.036,
+      dec0: 83.52,
+      decDot: -0.004,
+      w0: 6.32,
+      wDot: 262.7318996,
+    },
+    elements: {
+      aKm: 238400,
+      e: 0.005,
+      omega0: 119.5,
+      M0: 57,
+      i0: 0,
+      Omega0: 0,
+      periodDays: 1.370218,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 2.916,
+      nodePeriodYears: 0,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 40.6,
+      laplaceDec: 83.5,
+    },
+  },
+  {
+    id: 'tethys',
+    name: 'Tethys',
+    color: '#d9d8d2',
+    symbol: 'Ⅲ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(190.6979085), theta: 28.0703, phi: 79.5174 },
+    iau: {
+      ra0: 40.66,
+      raDot: -0.036,
+      dec0: 83.52,
+      decDot: -0.004,
+      w0: 8.95,
+      wDot: 190.6979085,
+    },
+    elements: {
+      aKm: 295000,
+      e: 0.001,
+      omega0: 335.3,
+      M0: 0,
+      i0: 1.1,
+      Omega0: 273,
+      periodDays: 1.887802,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 0.005,
+      nodePeriodYears: 4.982,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 40.6,
+      laplaceDec: 83.5,
+    },
+  },
+  {
+    id: 'dione',
+    name: 'Dione',
+    color: '#d2d0c9',
+    symbol: 'Ⅳ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(131.5349316), theta: 28.0703, phi: 79.5174 },
+    iau: {
+      ra0: 40.66,
+      raDot: -0.036,
+      dec0: 83.52,
+      decDot: -0.004,
+      w0: 357.6,
+      wDot: 131.5349316,
+    },
+    elements: {
+      aKm: 377700,
+      e: 0.002,
+      omega0: 116,
+      M0: 212,
+      i0: 0,
+      Omega0: 0,
+      periodDays: 2.736916,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 11.698,
+      nodePeriodYears: 0,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 40.6,
+      laplaceDec: 83.5,
+    },
+  },
+  {
+    id: 'rhea',
+    name: 'Rhea',
+    color: '#aaa9a5',
+    symbol: 'Ⅴ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(79.6900478), theta: 28.0271, phi: 79.507 },
+    iau: {
+      ra0: 40.38,
+      raDot: -0.036,
+      dec0: 83.55,
+      decDot: -0.004,
+      w0: 235.16,
+      wDot: 79.6900478,
+    },
+    elements: {
+      aKm: 527200,
+      e: 0.001,
+      omega0: 44.3,
+      M0: 31.5,
+      i0: 0.3,
+      Omega0: 133.7,
+      periodDays: 4.517503,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 33.939,
+      nodePeriodYears: 35.775,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 40.6,
+      laplaceDec: 83.5,
+    },
+  },
+  {
+    id: 'titan',
+    name: 'Titan',
+    color: '#d8a34a',
+    symbol: 'Ⅵ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(22.5769768), theta: 28.054, phi: 79.1738 },
+    iau: {
+      ra0: 39.4827,
+      raDot: 0,
+      dec0: 83.4279,
+      decDot: 0,
+      w0: 186.5855,
+      wDot: 22.5769768,
+    },
+    elements: {
+      aKm: 1221900,
+      e: 0.029,
+      omega0: 78.3,
+      M0: 11.7,
+      i0: 0.3,
+      Omega0: 78.6,
+      periodDays: 15.945448,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 346.68,
+      nodePeriodYears: 687.37,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 36.4,
+      laplaceDec: 84,
+    },
+  },
+  {
+    id: 'iapetus',
+    name: 'Iapetus',
+    color: '#8f806c',
+    symbol: 'Ⅷ',
+    parent: 'saturn',
+    rotation: { r: omegaFromWDot(4.5379572), theta: 17.2762, phi: 49.6079 },
+    iau: {
+      ra0: 318.16,
+      raDot: -3.949,
+      dec0: 75.03,
+      decDot: -1.143,
+      w0: 355.2,
+      wDot: 4.5379572,
+    },
+    elements: {
+      aKm: 3561700,
+      e: 0.028,
+      omega0: 254.5,
+      M0: 74.8,
+      i0: 7.6,
+      Omega0: 86.5,
+      periodDays: 79.331002,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 1662.9,
+      nodePeriodYears: 3130.302,
+      apsisDirection: 1,
+      nodeDirection: -1,
+      laplaceRa: 288.7,
+      laplaceDec: 78.9,
     },
   },
   // URA182 mean equatorial elements. The reference-plane pole is Uranus's IAU
