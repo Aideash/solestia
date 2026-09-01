@@ -94,6 +94,8 @@ export type Facing = {
   longitude: number
   /** Length of the projection onto the reference plane, 0 to 1. */
   inPlane: number
+  /** The unit vector itself, in the coordinates of the reference frame. */
+  direction: Vec3
 }
 
 /**
@@ -333,6 +335,73 @@ export function projectEdgeOn(
     x: cx + radius * (along / distance),
     y: cy - radius * (position.z / distance),
     depth,
+  }
+}
+
+/**
+ * A unit vector as the edge-on camera sees it, on the axes `projectEdgeOn`
+ * uses: `ux`/`uy` is the screen bearing, `inPlane` how much of the vector
+ * survives the projection, and `depth` the old up (Earth perihelion) axis,
+ * positive away from the viewer. Null where the vector points straight down
+ * the camera axis and the bearing carries no information — a meridian tipped
+ * far out of the ecliptic passes through that twice a spin.
+ */
+export function edgeOnFacing(
+  direction: Vec3,
+  earthPerihelionLongitude: number,
+): { ux: number; uy: number; inPlane: number; depth: number } | null {
+  const cosP = Math.cos(earthPerihelionLongitude)
+  const sinP = Math.sin(earthPerihelionLongitude)
+  const along = direction.x * sinP - direction.y * cosP
+  const depth = direction.x * cosP + direction.y * sinP
+  const distance = Math.hypot(direction.x, direction.y, direction.z)
+  if (distance < 1e-12) return null
+  const inPlane = Math.hypot(along, direction.z) / distance
+  if (inPlane < 1e-6) return null
+  return {
+    ux: along / distance / inPlane,
+    uy: -direction.z / distance / inPlane,
+    inPlane,
+    depth,
+  }
+}
+
+/** A prime-meridian whisker as two screen points, with the side it stands on. */
+export type Whisker = {
+  from: { x: number; y: number }
+  to: { x: number; y: number }
+  /** True when the meridian points away from the camera, so the disc hides it. */
+  far: boolean
+}
+
+/**
+ * The prime-meridian whisker seen edge-on: a mast standing on the surface
+ * point the meridian passes through, foreshortened along with everything else
+ * in the model. Its foot rides that point, sliding in from the limb toward the
+ * center of the disc as the meridian turns to face the camera, and the mast
+ * shortens with it — the same read as a pin on a spinning globe. Anchoring the
+ * foot at the center instead would leave a fixed `bodyRadius` of line crossing
+ * the disc, and that constant span swamps the foreshortening.
+ *
+ * `minLength` keeps the mast from collapsing to nothing at the moment it points
+ * straight down the camera axis, matching the floor the flat views use.
+ */
+export function edgeOnWhisker(
+  center: { x: number; y: number },
+  bodyRadius: number,
+  facing: Facing,
+  earthPerihelionLongitude: number,
+  minLength: number,
+  maxLength: number,
+): Whisker | null {
+  const bearing = edgeOnFacing(facing.direction, earthPerihelionLongitude)
+  if (!bearing) return null
+  const foot = bodyRadius * bearing.inPlane
+  const tip = foot + minLength + (maxLength - minLength) * bearing.inPlane
+  return {
+    from: { x: center.x + bearing.ux * foot, y: center.y + bearing.uy * foot },
+    to: { x: center.x + bearing.ux * tip, y: center.y + bearing.uy * tip },
+    far: bearing.depth >= 0,
   }
 }
 
@@ -618,7 +687,7 @@ export function localSolarTime(
 /** Prime-meridian direction projected onto the ecliptic plane. */
 export function primeMeridianFacing(iau: IauFrame, days: number): Facing {
   const v = equatorialToEcliptic(bodyFrame(iau, days).primeMeridian)
-  return { longitude: wrapRad(Math.atan2(v.y, v.x)), inPlane: Math.hypot(v.x, v.y) }
+  return { longitude: wrapRad(Math.atan2(v.y, v.x)), inPlane: Math.hypot(v.x, v.y), direction: v }
 }
 
 function planetState(
@@ -905,10 +974,13 @@ function parentEquatorFrame(iau: IauFrame, days: number): EquatorFrame {
 function projectIcrfOntoEquator(v: Vec3, frame: EquatorFrame): Facing {
   const x = dot(v, frame.node)
   const y = dot(v, frame.east)
+  const z = dot(v, frame.pole)
   const r = Math.hypot(v.x, v.y, v.z)
+  const unit = r > 0 ? 1 / r : 0
   return {
     longitude: wrapRad(Math.atan2(y, x)),
     inPlane: r > 0 ? Math.hypot(x, y) / r : 0,
+    direction: { x: x * unit, y: y * unit, z: z * unit },
   }
 }
 

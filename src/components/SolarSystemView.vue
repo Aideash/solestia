@@ -19,6 +19,7 @@ import {
 } from '../lib/format.ts'
 import {
   eccentricityWobble,
+  edgeOnWhisker,
   keplerOrbitPositions,
   orbitPoint,
   projectEdgeOn,
@@ -26,6 +27,7 @@ import {
   satelliteRelativeOrbitPositions,
   splitClosedByDepth,
   wrapRad,
+  type Facing,
   type PlanetSystemSnapshot,
   type PlanetState,
   type SatelliteState,
@@ -406,40 +408,76 @@ const rings = computed(() => {
 
     const bodyR = planet.id === 'earth' ? 1.7 : 1.45
     const facing = useEquator.value && isMoon ? planet.equatorFacing : planet.facing
-    const facingOffset = wrapRad(facing.longitude - origin)
-    const facingReach = bodyR + facingGap
-    const facingFrom = orbitPoint(body.x, body.y, facingReach, facingOffset)
-    const facingTo = orbitPoint(
-      body.x,
-      body.y,
-      facingReach + facingMin + (facingMax - facingMin) * facing.inPlane,
-      facingOffset,
-    )
+    const whisker = bodyWhisker(body, bodyR, facing, origin)
     const label =
       `${planet.name} — ${frameLabel} prime meridian faces ` +
       `${formatDeg(facing.longitude)} ${planeWord} longitude`
 
-    return { planet, path, bodyR, body, periTick, periInner, facingFrom, facingTo, label }
+    return { planet, path, bodyR, body, periTick, periInner, whisker, label }
   })
 })
+
+type Point = { x: number; y: number }
+type ViewWhisker = { from: Point; to: Point; variant: 'flat' | 'near' | 'far' }
+
+/**
+ * A prime-meridian whisker for one body. The flat views draw a bearing in the
+ * reference plane, starting clear of the disc since nothing there can pass
+ * behind it. Edge-on the whisker stands on the surface instead, so its own
+ * disc hides it while the meridian faces away and it paints across the face
+ * while the meridian faces the camera.
+ *
+ * `origin` is the azimuth of diagram-up, which edge-on is always Earth
+ * perihelion — the axis the edge camera takes as depth, and the frame
+ * `facing.direction` is expressed in.
+ */
+function whiskerFor(
+  center: Point,
+  bodyRadius: number,
+  facing: Facing,
+  origin: number,
+  gap: number,
+  min: number,
+  max: number,
+): ViewWhisker | null {
+  if (useEdge.value) {
+    const edge = edgeOnWhisker(center, bodyRadius, facing, origin, min, max)
+    return edge && { from: edge.from, to: edge.to, variant: edge.far ? 'far' : 'near' }
+  }
+  const offset = wrapRad(facing.longitude - origin)
+  const reach = bodyRadius + gap
+  return {
+    from: orbitPoint(center.x, center.y, reach, offset),
+    to: orbitPoint(center.x, center.y, reach + min + (max - min) * facing.inPlane, offset),
+    variant: 'flat',
+  }
+}
+
+function centerWhisker(facing: Facing, origin: number): ViewWhisker | null {
+  return whiskerFor(
+    { x: cx, y: cy },
+    sunR,
+    facing,
+    origin,
+    sunFacingGap,
+    sunFacingMin,
+    sunFacingMax,
+  )
+}
+
+function bodyWhisker(center: Point, bodyRadius: number, facing: Facing, origin: number) {
+  return whiskerFor(center, bodyRadius, facing, origin, facingGap, facingMin, facingMax)
+}
 
 const sunMark = computed(() => {
   if (isPlanetSystemSnapshot(props.snapshot)) return null
   const { sun, earthPerihelionLongitude } = props.snapshot
-  const offset = wrapRad(sun.facing.longitude - earthPerihelionLongitude)
-  const reach = sunR + sunFacingGap
-  const from = orbitPoint(cx, cy, reach, offset)
-  const to = orbitPoint(
-    cx,
-    cy,
-    reach + sunFacingMin + (sunFacingMax - sunFacingMin) * sun.facing.inPlane,
-    offset,
-  )
+  const whisker = centerWhisker(sun.facing, earthPerihelionLongitude)
   const label =
     `Sun — Carrington prime meridian faces ${formatDeg(sun.facing.longitude)} ecliptic ` +
     `longitude, one turn every ${sun.siderealRotationDays.toFixed(2)} d. ` +
     `Spin axis tilted ${formatDeg(sun.obliquity)} from ecliptic north`
-  return { from, to, label }
+  return { whisker, label }
 })
 
 const parentMark = computed(() => {
@@ -447,18 +485,10 @@ const parentMark = computed(() => {
   const { parent, earthPerihelionLongitude, equatorOrigin, parentEquatorFacing } = props.snapshot
   const facing = useEquator.value ? parentEquatorFacing : parent.facing
   const origin = useEquator.value ? equatorOrigin : earthPerihelionLongitude
-  const offset = wrapRad(facing.longitude - origin)
-  const reach = sunR + sunFacingGap
-  const from = orbitPoint(cx, cy, reach, offset)
-  const to = orbitPoint(
-    cx,
-    cy,
-    reach + sunFacingMin + (sunFacingMax - sunFacingMin) * facing.inPlane,
-    offset,
-  )
+  const whisker = centerWhisker(facing, origin)
   const planeWord = useEquator.value ? 'equatorial' : 'ecliptic'
   const label = `${parent.name} — IAU prime meridian faces ${formatDeg(facing.longitude)} ${planeWord} longitude`
-  return { from, to, label, color: parent.color }
+  return { whisker, label, color: parent.color }
 })
 
 const sunTick = computed(() => {
@@ -526,15 +556,8 @@ const projectedRings = computed(() => {
           }
         : peri
     const bodyR = planet.id === 'earth' ? 1.7 : 1.45
-    const facingOffset = wrapRad(planet.facing.longitude - origin)
-    const facingReach = bodyR + facingGap
-    const facingFrom = orbitPoint(projected.x, projected.y, facingReach, facingOffset)
-    const facingTo = orbitPoint(
-      projected.x,
-      projected.y,
-      facingReach + facingMin + (facingMax - facingMin) * planet.facing.inPlane,
-      facingOffset,
-    )
+    const body = { x: projected.x, y: projected.y }
+    const whisker = bodyWhisker(body, bodyR, planet.facing, origin)
     const latitude = formatDeg(Math.atan2(position.z, Math.hypot(position.x, position.y)))
     const label = useEdge.value
       ? `${planet.name} — ecliptic latitude ${latitude}`
@@ -542,15 +565,14 @@ const projectedRings = computed(() => {
     return {
       planet,
       bodyR,
-      body: { x: projected.x, y: projected.y },
+      body,
       depth: projected.depth,
       far,
       near,
       stem: { x1: projected.x, y1: cy, x2: projected.x, y2: projected.y },
       periTick: peri,
       periInner,
-      facingFrom,
-      facingTo,
+      whisker,
       label,
     }
   })
@@ -843,12 +865,12 @@ const rows = computed((): ReadoutRow[] =>
           {{
             isSatelliteSystem
               ? useEdge
-                ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed edge-on to the ecliptic. Vertical is ecliptic north. A body out to the side shows its full ecliptic latitude; one coming toward or going away from the viewer is foreshortened. Mean distances are spread evenly and the radial scale is compressed between them. Bodies nearer along Earth’s perihelion direction are drawn in front.`
+                ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed edge-on to the ecliptic. Vertical is ecliptic north. A body out to the side shows its full ecliptic latitude; one coming toward or going away from the viewer is foreshortened. Mean distances are spread evenly and the radial scale is compressed between them. Bodies nearer along Earth’s perihelion direction are drawn in front. Each whisker stands on the surface point its prime meridian passes through: it slides in from the limb and shortens as that meridian turns to face the camera, paints across the disc while facing the viewer, and its own disc hides it while facing away.`
                 : useEquator
                   ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed in ${planetSystem?.name}’s equator. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is projected at the top. The Sun’s azimuth is seasonal. Each moon’s whisker shows where its prime meridian points.`
                   : `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, seen by an orthographic camera north of the ecliptic. Inclined orbits are foreshortened in the ecliptic plane; the Uranian moons therefore appear as thin slivers and pass close to the focus. Mean distances are spread evenly and the radial scale is compressed between them. Earth’s perihelion is up. Bodies above the ecliptic are drawn in front. The table’s r remains the full three-dimensional distance.`
               : useEdge
-                ? 'Orbits of Mercury through Neptune about the focus at the Sun, viewed edge-on to the ecliptic. Vertical is ecliptic north. A planet out to the side shows its full ecliptic latitude; one coming toward or going away from the viewer is foreshortened. Mean distances are spread evenly and the radial scale is compressed between them. Bodies nearer along Earth’s perihelion direction are drawn in front.'
+                ? 'Orbits of Mercury through Neptune about the focus at the Sun, viewed edge-on to the ecliptic. Vertical is ecliptic north. A planet out to the side shows its full ecliptic latitude; one coming toward or going away from the viewer is foreshortened. Mean distances are spread evenly and the radial scale is compressed between them. Bodies nearer along Earth’s perihelion direction are drawn in front. Each whisker stands on the surface point its prime meridian passes through: it slides in from the limb and shortens as that meridian turns to face the camera, paints across the disc while facing the viewer, and its own disc hides it while facing away. The Sun’s axis is tilted only 7 degrees from ecliptic north, so its whisker stays close to the horizontal.'
                 : 'Orbits of Mercury through Neptune about the focus at the Sun, seen by an orthographic camera north of the ecliptic. Inclined orbits are foreshortened in the ecliptic plane. Mean distances are spread evenly and the radial scale is compressed between them. Earth’s perihelion is at the top, aphelion at the bottom. Bodies above the ecliptic are drawn in front. Each planet carries a short whisker showing where its prime meridian points.'
           }}
           <template v-if="orbitalBands.length && (!isSatelliteSystem || useEquator)">
@@ -994,39 +1016,58 @@ const rows = computed((): ReadoutRow[] =>
               :style="{ '--body-color': ring.planet.color }"
             />
             <line
-              v-if="showFacing"
+              v-if="showFacing && ring.whisker"
               class="facing"
-              :x1="ring.facingFrom.x"
-              :y1="ring.facingFrom.y"
-              :x2="ring.facingTo.x"
-              :y2="ring.facingTo.y"
-              :stroke="ring.planet.color"
+              :x1="ring.whisker.from.x"
+              :y1="ring.whisker.from.y"
+              :x2="ring.whisker.to.x"
+              :y2="ring.whisker.to.y"
+              :style="{ '--facing-stroke': ring.planet.color }"
             />
           </g>
         </template>
         <g v-if="sunMark" class="sun-mark">
           <title>{{ sunMark.label }}</title>
+          <line
+            v-if="showSunFacing && sunMark.whisker?.variant === 'far'"
+            class="sun-facing facing--far"
+            :x1="sunMark.whisker.from.x"
+            :y1="sunMark.whisker.from.y"
+            :x2="sunMark.whisker.to.x"
+            :y2="sunMark.whisker.to.y"
+          />
           <circle class="sun" :cx="cx" :cy="cy" :r="sunR" />
           <line
-            v-if="showSunFacing && !useEdge"
+            v-if="showSunFacing && sunMark.whisker && sunMark.whisker.variant !== 'far'"
             class="sun-facing"
-            :x1="sunMark.from.x"
-            :y1="sunMark.from.y"
-            :x2="sunMark.to.x"
-            :y2="sunMark.to.y"
+            :class="{ 'facing--near': sunMark.whisker.variant === 'near' }"
+            :x1="sunMark.whisker.from.x"
+            :y1="sunMark.whisker.from.y"
+            :x2="sunMark.whisker.to.x"
+            :y2="sunMark.whisker.to.y"
           />
         </g>
         <g v-else-if="parentMark" class="sun-mark" @dblclick="onParentDblclick">
           <title>{{ parentMark.label }}</title>
+          <line
+            v-if="showSunFacing && parentMark.whisker?.variant === 'far'"
+            class="planet-center-facing facing--far"
+            :x1="parentMark.whisker.from.x"
+            :y1="parentMark.whisker.from.y"
+            :x2="parentMark.whisker.to.x"
+            :y2="parentMark.whisker.to.y"
+            :style="{ '--facing-stroke': parentMark.color }"
+          />
           <circle class="planet-center" :cx="cx" :cy="cy" :r="sunR" :fill="parentMark.color" />
           <line
-            v-if="showSunFacing && !useEdge"
+            v-if="showSunFacing && parentMark.whisker && parentMark.whisker.variant !== 'far'"
             class="planet-center-facing"
-            :x1="parentMark.from.x"
-            :y1="parentMark.from.y"
-            :x2="parentMark.to.x"
-            :y2="parentMark.to.y"
-            :style="{ stroke: parentMark.color }"
+            :class="{ 'facing--near': parentMark.whisker.variant === 'near' }"
+            :x1="parentMark.whisker.from.x"
+            :y1="parentMark.whisker.from.y"
+            :x2="parentMark.whisker.to.x"
+            :y2="parentMark.whisker.to.y"
+            :style="{ '--facing-stroke': parentMark.color }"
           />
         </g>
         <template v-if="useProjectedCamera">
@@ -1062,6 +1103,15 @@ const rows = computed((): ReadoutRow[] =>
               :x2="ring.periTick.x"
               :y2="ring.periTick.y"
             />
+            <line
+              v-if="showFacing && ring.whisker?.variant === 'far'"
+              class="facing facing--far"
+              :x1="ring.whisker.from.x"
+              :y1="ring.whisker.from.y"
+              :x2="ring.whisker.to.x"
+              :y2="ring.whisker.to.y"
+              :style="{ '--facing-stroke': ring.planet.color }"
+            />
             <circle
               class="body"
               :cx="ring.body.x"
@@ -1071,13 +1121,14 @@ const rows = computed((): ReadoutRow[] =>
               :style="{ '--body-color': ring.planet.color }"
             />
             <line
-              v-if="showFacing && !useEdge"
+              v-if="showFacing && ring.whisker && ring.whisker.variant !== 'far'"
               class="facing"
-              :x1="ring.facingFrom.x"
-              :y1="ring.facingFrom.y"
-              :x2="ring.facingTo.x"
-              :y2="ring.facingTo.y"
-              :stroke="ring.planet.color"
+              :class="{ 'facing--near': ring.whisker.variant === 'near' }"
+              :x1="ring.whisker.from.x"
+              :y1="ring.whisker.from.y"
+              :x2="ring.whisker.to.x"
+              :y2="ring.whisker.to.y"
+              :style="{ '--facing-stroke': ring.planet.color }"
             />
           </g>
         </template>
@@ -1503,11 +1554,13 @@ const rows = computed((): ReadoutRow[] =>
 }
 
 .facing {
+  stroke: var(--facing-stroke);
   stroke-width: 0.32;
   stroke-linecap: round;
   opacity: 0.55;
 
-  g.selected & {
+  /* Zero-specificity so the depth modifiers below can still win on stroke. */
+  :where(g.selected) & {
     opacity: 0.95;
   }
 }
@@ -1518,10 +1571,27 @@ const rows = computed((): ReadoutRow[] =>
 
 .planet-center-facing,
 .sun-facing {
-  stroke: var(--accent);
+  --facing-stroke: var(--accent);
+
+  stroke: var(--facing-stroke);
   stroke-width: 0.32;
   stroke-linecap: round;
   opacity: 0.7;
+}
+
+/**
+ * Edge-on, a whisker stands on the body's surface. Facing the camera it paints
+ * across the disc, so it is darkened to read against the body color underneath.
+ * Facing away it is buried, and only what clears the limb shows — dimmed with
+ * `stroke-opacity` so it multiplies with the selected state rather than
+ * fighting it.
+ */
+.facing--near {
+  stroke: color-mix(in srgb, var(--facing-stroke) 45%, black);
+}
+
+.facing--far {
+  stroke-opacity: 0.45;
 }
 
 .sun-mark {

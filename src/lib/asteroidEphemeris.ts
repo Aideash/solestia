@@ -14,6 +14,7 @@ import {
   solarSystemAt,
   wrapRad,
   type Facing,
+  type SunState,
   type Vec3,
 } from './kepler.ts'
 
@@ -72,6 +73,8 @@ export type AsteroidBeltSnapshot = {
   jupiterLongitude: number
   jupiterOffsetFromEarthPerihelion: number
   jupiterPosition: Vec3
+  /** The Sun at the focus, on the Carrington W the belt view has no picker for. */
+  sun: SunState
   asteroids: AsteroidState[]
 }
 
@@ -336,6 +339,7 @@ export function asteroidBeltAt(date: Date): AsteroidBeltSnapshot {
     jupiterLongitude: jupiter.longitude,
     jupiterOffsetFromEarthPerihelion: jupiter.offsetFromEarthPerihelion,
     jupiterPosition: jupiter.position,
+    sun: solar.sun,
     asteroids,
   }
 }

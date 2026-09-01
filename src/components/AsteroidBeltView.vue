@@ -14,10 +14,12 @@ import {
   type DistanceUnit,
 } from '../lib/format.ts'
 import {
+  edgeOnWhisker,
   orbitPoint,
   projectEdgeOn,
   projectEclipticTopDown,
   splitClosedByDepth,
+  type Facing,
 } from '../lib/kepler.ts'
 import { asteroidOrbitPositions, type AsteroidBeltSnapshot } from '../lib/asteroidEphemeris.ts'
 import type { ViewPlane } from '../data/planetSystems.ts'
@@ -44,10 +46,47 @@ const frameR = 46
 const facingGap = 0.2
 const facingMin = 0.35
 const facingMax = 1.25
+/** The same whisker for the Sun, scaled to its larger disc. */
+const sunFacingGap = 0.35
+const sunFacingMin = 0.6
+const sunFacingMax = 1.6
 const pad = 6
 const viewBox = `${-pad} ${-pad} ${size + pad * 2} ${size + pad * 2}`
 
 const useEdge = computed(() => props.viewPlane === 'edge')
+
+const asteroidR = 1.65
+
+type Point = { x: number; y: number }
+type ViewWhisker = { from: Point; to: Point; variant: 'flat' | 'near' | 'far' }
+
+/**
+ * A prime-meridian whisker for one body. Seen from ecliptic north it is a
+ * bearing starting clear of the disc; edge-on it stands on the surface, so its
+ * own disc hides it while the meridian faces away and it paints across the
+ * face while the meridian faces the camera.
+ */
+function whiskerFor(
+  center: Point,
+  bodyRadius: number,
+  facing: Facing,
+  origin: number,
+  gap: number,
+  min: number,
+  max: number,
+): ViewWhisker | null {
+  if (useEdge.value) {
+    const edge = edgeOnWhisker(center, bodyRadius, facing, origin, min, max)
+    return edge && { from: edge.from, to: edge.to, variant: edge.far ? 'far' : 'near' }
+  }
+  const offset = facing.longitude - origin
+  const reach = bodyRadius + gap
+  return {
+    from: orbitPoint(center.x, center.y, reach, offset),
+    to: orbitPoint(center.x, center.y, reach + min + (max - min) * facing.inPlane, offset),
+    variant: 'flat',
+  }
+}
 
 /**
  * The belt is one annulus rather than a system spanning decades of distance,
@@ -114,14 +153,14 @@ const projectedMarks = computed(() => {
         : { x: body.x, y: body.y - 3.2 }
     const labelX = label.x
     const anchor = Math.abs(labelX - cx) < 3 ? 'middle' : labelX < cx ? 'end' : 'start'
-    const facingOffset = asteroid.facing.longitude - origin
-    const facingReach = 1.65 + facingGap
-    const facingFrom = orbitPoint(body.x, body.y, facingReach, facingOffset)
-    const facingTo = orbitPoint(
-      body.x,
-      body.y,
-      facingReach + facingMin + (facingMax - facingMin) * asteroid.facing.inPlane,
-      facingOffset,
+    const whisker = whiskerFor(
+      body,
+      asteroidR,
+      asteroid.facing,
+      origin,
+      facingGap,
+      facingMin,
+      facingMax,
     )
     return {
       asteroid,
@@ -133,8 +172,7 @@ const projectedMarks = computed(() => {
       stem: { x1: projected.x, y1: cy, x2: projected.x, y2: projected.y },
       periTick: peri,
       periInner,
-      facingFrom,
-      facingTo,
+      whisker,
       label,
       anchor,
     }
@@ -143,6 +181,23 @@ const projectedMarks = computed(() => {
 
 const projectedBodies = computed(() =>
   [...projectedMarks.value].sort((a, b) => (useEdge.value ? b.depth - a.depth : a.depth - b.depth)),
+)
+
+/**
+ * Where the Carrington prime meridian points. The Sun's axis is tilted only 7°
+ * from ecliptic north, so edge-on this whisker stays close to the horizontal
+ * while it sweeps in and out across the disc.
+ */
+const sunFacing = computed(() =>
+  whiskerFor(
+    { x: cx, y: cy },
+    sunR,
+    props.snapshot.sun.facing,
+    props.snapshot.earthPerihelionLongitude,
+    sunFacingGap,
+    sunFacingMin,
+    sunFacingMax,
+  ),
 )
 
 const projectedJupiter = computed(() => {
@@ -410,8 +465,8 @@ const selectedMeridian = computed(() => {
         <desc>
           {{
             useEdge
-              ? 'Seven objects and their sampled orbits are shown edge-on to the ecliptic. Vertical is ecliptic north. Screen radius is proportional to heliocentric distance. Bodies nearer along Earth’s perihelion direction are drawn in front. The Jupiter symbol marks Jupiter’s current direction.'
-              : 'Seven objects and their sampled orbits are seen by an orthographic camera north of the ecliptic. Screen radius is proportional to heliocentric distance, so inclined orbits foreshorten toward the Sun. Faint circles mark each semi-major axis. Earth’s perihelion is up. Bodies above the ecliptic are drawn in front. The Jupiter symbol marks Jupiter’s current direction.'
+              ? 'Seven objects and their sampled orbits are shown edge-on to the ecliptic. Vertical is ecliptic north. Screen radius is proportional to heliocentric distance. Bodies nearer along Earth’s perihelion direction are drawn in front. The Jupiter symbol marks Jupiter’s current direction. Each whisker stands on the surface point its prime meridian passes through: it slides in from the limb and shortens as that meridian turns to face the camera, paints across the disc while facing the viewer, and its own disc hides it while facing away. The Sun’s axis is tilted only 7 degrees from ecliptic north, so its whisker stays close to the horizontal.'
+              : 'Seven objects and their sampled orbits are seen by an orthographic camera north of the ecliptic. Screen radius is proportional to heliocentric distance, so inclined orbits foreshorten toward the Sun. Faint circles mark each semi-major axis. Earth’s perihelion is up. Bodies above the ecliptic are drawn in front. The Jupiter symbol marks Jupiter’s current direction. The whisker on the Sun points where the Carrington prime meridian faces.'
           }}
         </desc>
 
@@ -469,7 +524,28 @@ const selectedMeridian = computed(() => {
         </g>
 
         <g class="sun" @dblclick="emit('select', 'sun')">
+          <title>
+            Sun — Carrington prime meridian faces
+            {{ formatDeg(snapshot.sun.facing.longitude) }} ecliptic longitude
+          </title>
+          <line
+            v-if="sunFacing?.variant === 'far'"
+            class="sun__facing facing--far"
+            :x1="sunFacing.from.x"
+            :y1="sunFacing.from.y"
+            :x2="sunFacing.to.x"
+            :y2="sunFacing.to.y"
+          />
           <circle :cx="cx" :cy="cy" :r="sunR" />
+          <line
+            v-if="sunFacing && sunFacing.variant !== 'far'"
+            class="sun__facing"
+            :class="{ 'facing--near': sunFacing.variant === 'near' }"
+            :x1="sunFacing.from.x"
+            :y1="sunFacing.from.y"
+            :x2="sunFacing.to.x"
+            :y2="sunFacing.to.y"
+          />
           <text :x="cx" :y="cy">☉</text>
         </g>
 
@@ -515,14 +591,23 @@ const selectedMeridian = computed(() => {
             :y2="mark.periTick.y"
           />
           <line
-            v-if="!useEdge"
-            class="asteroid__facing"
-            :x1="mark.facingFrom.x"
-            :y1="mark.facingFrom.y"
-            :x2="mark.facingTo.x"
-            :y2="mark.facingTo.y"
+            v-if="mark.whisker?.variant === 'far'"
+            class="asteroid__facing facing--far"
+            :x1="mark.whisker.from.x"
+            :y1="mark.whisker.from.y"
+            :x2="mark.whisker.to.x"
+            :y2="mark.whisker.to.y"
           />
-          <circle class="asteroid__disc" :cx="mark.body.x" :cy="mark.body.y" r="1.65" />
+          <circle class="asteroid__disc" :cx="mark.body.x" :cy="mark.body.y" :r="asteroidR" />
+          <line
+            v-if="mark.whisker && mark.whisker.variant !== 'far'"
+            class="asteroid__facing"
+            :class="{ 'facing--near': mark.whisker.variant === 'near' }"
+            :x1="mark.whisker.from.x"
+            :y1="mark.whisker.from.y"
+            :x2="mark.whisker.to.x"
+            :y2="mark.whisker.to.y"
+          />
           <text class="asteroid__number" :x="mark.body.x" :y="mark.body.y">
             {{ mark.asteroid.number }}
           </text>
@@ -756,6 +841,16 @@ svg {
   text-anchor: middle;
 }
 
+.sun__facing {
+  --facing-stroke: #{$color-accent};
+
+  stroke: var(--facing-stroke);
+  stroke-width: 0.32;
+  stroke-linecap: round;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
 .sun {
   cursor: pointer;
 }
@@ -802,11 +897,28 @@ svg:has(g.selected) {
 }
 
 .asteroid__facing {
-  stroke: var(--body-color);
+  --facing-stroke: var(--body-color);
+
+  stroke: var(--facing-stroke);
   stroke-width: 0.32;
   stroke-linecap: round;
   opacity: 0.7;
   pointer-events: none;
+}
+
+/**
+ * Edge-on, a whisker stands on the body's surface. Facing the camera it paints
+ * across the disc, so it is darkened to read against the color underneath.
+ * Facing away it is buried, and only what clears the limb shows — dimmed with
+ * `stroke-opacity` so it multiplies with the group's own fading rather than
+ * fighting it. Both rules follow the bases they override.
+ */
+.facing--near {
+  stroke: color-mix(in srgb, var(--facing-stroke) 45%, black);
+}
+
+.facing--far {
+  stroke-opacity: 0.45;
 }
 
 .asteroid__peri {
