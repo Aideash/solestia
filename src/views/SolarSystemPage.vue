@@ -40,8 +40,8 @@ function togglePlanet(id: string) {
 }
 
 function openSystem(id: string) {
-  if (id === 'asteroid-belt') {
-    void router.push({ name: 'asteroid-belt' })
+  if (id === 'asteroid-belt' || id === 'kuiper-belt') {
+    void router.push({ name: id })
     return
   }
   const system = planetSystemFor(id as Parameters<typeof planetSystemFor>[0])

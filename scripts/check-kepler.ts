@@ -7,6 +7,7 @@ import {
 } from '../src/data/planets.ts'
 import { MOONS } from '../src/data/moons.ts'
 import { ASTEROIDS } from '../src/data/asteroids.ts'
+import { KUIPER_OBJECTS } from '../src/data/kuiperObjects.ts'
 import {
   ASTEROID_EPHEMERIS_HOLDOUTS,
   ASTEROID_EPHEMERIS_SAMPLE_COUNT,
@@ -14,6 +15,13 @@ import {
   ASTEROID_EPHEMERIS_STEP_DAYS,
   ASTEROID_EPHEMERIS_VALIDATION,
 } from '../src/data/generated/asteroidEphemerides.ts'
+import {
+  KUIPER_EPHEMERIS_HOLDOUTS,
+  KUIPER_EPHEMERIS_SAMPLE_COUNT,
+  KUIPER_EPHEMERIS_START_JD,
+  KUIPER_EPHEMERIS_STEP_DAYS,
+  KUIPER_EPHEMERIS_VALIDATION,
+} from '../src/data/generated/kuiperEphemerides.ts'
 import { PLANET_SYSTEM_BANDS, SOLAR_SYSTEM_BANDS } from '../src/data/orbitalBands.ts'
 import { PLANET_SYSTEMS } from '../src/data/planetSystems.ts'
 import {
@@ -39,6 +47,11 @@ import {
   asteroidOrbitPositions,
   asteroidPositionAtJulianDate,
 } from '../src/lib/asteroidEphemeris.ts'
+import {
+  kuiperBeltAt,
+  kuiperObjectOrbitPositions,
+  kuiperObjectPositionAtJulianDate,
+} from '../src/lib/kuiperEphemeris.ts'
 import { resolveOrbitalBands, resolveSolarOrbitalBands } from '../src/lib/orbitalBands.ts'
 import { radialScale, solarOrbitOuterR } from '../src/lib/radialScale.ts'
 
@@ -889,6 +902,221 @@ for (const asteroid of [hygiea, interamnia]) {
 
 console.log(
   `ok  asteroid ephemerides and rotation cover 1800–2050; seven unique bodies, worst stored holdout ${worstAsteroidHoldoutError.toExponential(2)} AU; drawn orbits hold to ${worstDrawnWobble.toFixed(3)} AU and ${worstApsidalWobble.toFixed(2)}° across a knot interval`,
+)
+
+const kuiperIds = new Set(KUIPER_OBJECTS.map((object) => object.id))
+const kuiperNumbers = new Set(KUIPER_OBJECTS.map((object) => object.number))
+assert(KUIPER_OBJECTS.length === 9, `expected nine Kuiper objects, got ${KUIPER_OBJECTS.length}`)
+assert(kuiperIds.size === KUIPER_OBJECTS.length, 'Kuiper object IDs must be unique')
+assert(kuiperNumbers.size === KUIPER_OBJECTS.length, 'Kuiper object numbers must be unique')
+assert(
+  KUIPER_OBJECTS.filter((object) => object.primeMeridianDefined)
+    .map((object) => object.id)
+    .join(',') === 'pluto',
+  'only Pluto should claim a defined Kuiper-object prime meridian',
+)
+for (let index = 1; index < KUIPER_OBJECTS.length; index++) {
+  assert(
+    KUIPER_OBJECTS[index].a > KUIPER_OBJECTS[index - 1].a,
+    `Kuiper objects must run inward to outward: ${KUIPER_OBJECTS[index - 1].id}, ${KUIPER_OBJECTS[index].id}`,
+  )
+}
+for (const object of KUIPER_OBJECTS.filter((item) => !item.primeMeridianDefined)) {
+  assert(object.poleSource === 'orbit-normal', `${object.name} must label its assumed pole`)
+  assert(object.iau.w0 === 0, `${object.name} arbitrary J2000 W0 should be zero`)
+}
+
+const kuiperEphemerisEndJd =
+  KUIPER_EPHEMERIS_START_JD + (KUIPER_EPHEMERIS_SAMPLE_COUNT - 1) * KUIPER_EPHEMERIS_STEP_DAYS
+assert(
+  KUIPER_EPHEMERIS_START_JD <= julianDate(new Date(ELEMENTS_VALID_FROM_MS)),
+  'Kuiper ephemerides must cover the start of the app epoch',
+)
+assert(
+  kuiperEphemerisEndJd >= julianDate(new Date(ELEMENTS_VALID_TO_MS)),
+  'Kuiper ephemerides must cover the end of the app epoch',
+)
+
+let worstKuiperHoldoutError = 0
+for (const object of KUIPER_OBJECTS) {
+  const validation = KUIPER_EPHEMERIS_VALIDATION[object.id]
+  assert(
+    validation.maxAngularErrorDeg < 0.0001,
+    `${object.name} generator holdouts exceed 0.0001°: ${validation.maxAngularErrorDeg}°`,
+  )
+  assert(
+    validation.maxPositionErrorAu < 0.0001,
+    `${object.name} generator holdouts exceed 0.0001 AU: ${validation.maxPositionErrorAu} AU`,
+  )
+  for (const holdout of KUIPER_EPHEMERIS_HOLDOUTS[object.id]) {
+    const actual = kuiperObjectPositionAtJulianDate(object.id, holdout.jd)
+    const error = Math.hypot(
+      actual.x - holdout.position[0],
+      actual.y - holdout.position[1],
+      actual.z - holdout.position[2],
+    )
+    worstKuiperHoldoutError = Math.max(worstKuiperHoldoutError, error)
+    assert(error < 0.0001, `${object.name} stored holdout error is ${error} AU`)
+  }
+}
+
+for (const date of [new Date(ELEMENTS_VALID_FROM_MS), new Date(), new Date(ELEMENTS_VALID_TO_MS)]) {
+  const snapshot = kuiperBeltAt(date)
+  assert(
+    snapshot.objects.length === KUIPER_OBJECTS.length,
+    `Kuiper objects missing at ${date.toISOString()}`,
+  )
+  assert(
+    Number.isFinite(snapshot.neptuneLongitude) &&
+      Math.hypot(
+        snapshot.neptunePosition.x,
+        snapshot.neptunePosition.y,
+        snapshot.neptunePosition.z,
+      ) > 25,
+    `Neptune context is invalid at ${date.toISOString()}`,
+  )
+  for (const object of snapshot.objects) {
+    assert(
+      Number.isFinite(object.longitude) &&
+        Number.isFinite(object.distanceAu) &&
+        Number.isFinite(object.yearFraction) &&
+        Number.isFinite(object.dayFraction) &&
+        object.distanceAu > object.a * (1 - object.e) * 0.95 &&
+        object.distanceAu < object.a * (1 + object.e) * 1.05 &&
+        object.yearFraction >= 0 &&
+        object.yearFraction < 1 &&
+        object.dayFraction >= 0 &&
+        object.dayFraction < 1,
+      `${object.name} has an implausible state at ${date.toISOString()}`,
+    )
+    const orbit = kuiperObjectOrbitPositions(object.id, date)
+    assert(
+      orbit.length >= 96 &&
+        orbit.every(
+          (point) =>
+            Number.isFinite(point.x) && Number.isFinite(point.y) && Number.isFinite(point.z),
+        ),
+      `${object.name} orbit geometry is invalid at ${date.toISOString()}`,
+    )
+  }
+}
+
+/**
+ * The barycentric frame is what makes this bound meetable. Referred to the Sun
+ * these same states swung Quaoar's perihelion 23° across the sampled window,
+ * because every planet is interior out here and Jupiter drags the Sun and the
+ * object together at 11.9 years; the eccentricity vector picks that up and
+ * dividing it by Quaoar's e of 0.035 turns it into a visibly rotating ellipse.
+ * Referred to the barycenter the same measurement is 0.018°.
+ */
+let worstKuiperDrawnWobble = 0
+let worstKuiperApsidalWobble = 0
+for (let knot = 2; knot < KUIPER_EPHEMERIS_SAMPLE_COUNT - 3; knot += 60) {
+  const startJd = KUIPER_EPHEMERIS_START_JD + knot * KUIPER_EPHEMERIS_STEP_DAYS
+  const aphelia = new Map<string, number[]>()
+  const apsides = new Map<string, number[]>()
+  for (let day = 0; day <= KUIPER_EPHEMERIS_STEP_DAYS; day += 15) {
+    const date = new Date((startJd + day - UNIX_EPOCH_JD) * MS_PER_DAY)
+    for (const state of kuiperBeltAt(date).objects) {
+      const reach = kuiperObjectOrbitPositions(state.id, date).map((position) =>
+        Math.hypot(position.x, position.y, position.z),
+      )
+      aphelia.set(state.id, [...(aphelia.get(state.id) ?? []), Math.max(...reach)])
+      apsides.set(state.id, [...(apsides.get(state.id) ?? []), deg(state.perihelionLongitude)])
+    }
+  }
+  for (const object of KUIPER_OBJECTS) {
+    // Sedna's aphelion sits past 1000 AU, so this one is judged in proportion.
+    const drawn = aphelia.get(object.id) ?? []
+    const drawnWobble = (Math.max(...drawn) - Math.min(...drawn)) / Math.max(...drawn)
+    assert(
+      drawnWobble < 1e-3,
+      `${object.name}'s drawn orbit should hold its shape across a knot interval, aphelion swung ${(drawnWobble * 100).toFixed(4)}%`,
+    )
+    worstKuiperDrawnWobble = Math.max(worstKuiperDrawnWobble, drawnWobble)
+
+    const apsidal = apsides.get(object.id) ?? []
+    const apsidalWobble = Math.max(...apsidal) - Math.min(...apsidal)
+    assert(
+      apsidalWobble < 0.05,
+      `${object.name}'s perihelion direction should hold steady across a knot interval, swung ${apsidalWobble.toFixed(4)}°`,
+    )
+    worstKuiperApsidalWobble = Math.max(worstKuiperApsidalWobble, apsidalWobble)
+  }
+}
+
+const sednaCatalog = KUIPER_OBJECTS.find((object) => object.id === 'sedna')
+assert(sednaCatalog, 'Sedna missing from Kuiper catalog')
+const mainKuiperObjects = KUIPER_OBJECTS.filter((object) => object.id !== 'sedna')
+const mainKuiperOuterAu = Math.max(...mainKuiperObjects.map((object) => object.a * (1 + object.e)))
+const sednaOuterAu = sednaCatalog.a * (1 + sednaCatalog.e)
+assert(
+  mainKuiperOuterAu > 90 && mainKuiperOuterAu < 110,
+  `main Kuiper scale reaches ${mainKuiperOuterAu} AU`,
+)
+assert(
+  sednaOuterAu > 1000 && sednaOuterAu > mainKuiperOuterAu * 9,
+  `Sedna should require its separate scale, got ${sednaOuterAu} AU`,
+)
+
+/**
+ * Sedna is drawn twice: clipped to the frame on the shared scale, and whole in
+ * the inset. The clipped copy is only worth having if it actually resolves both
+ * ways inside 1800–2050, so pin the crossing rather than let it silently become
+ * always-hidden or always-shown if the scale moves.
+ */
+const KUIPER_FRAME_UNITS = 46
+const KUIPER_ORBIT_UNITS = 42
+const kuiperFrameAu = (KUIPER_FRAME_UNITS * mainKuiperOuterAu) / KUIPER_ORBIT_UNITS
+const sednaDistanceIn = (year: number) =>
+  kuiperBeltAt(new Date(Date.UTC(year, 0, 1))).objects.find((object) => object.id === 'sedna')
+    ?.distanceAu ?? 0
+const sednaEarly = sednaDistanceIn(1800)
+const sednaLate = sednaDistanceIn(2050)
+assert(
+  sednaEarly > kuiperFrameAu,
+  `Sedna should start outside the frame, was ${sednaEarly.toFixed(1)} AU against ${kuiperFrameAu.toFixed(1)}`,
+)
+assert(
+  sednaLate < mainKuiperOuterAu,
+  `Sedna should end inside the drawn orbits, was ${sednaLate.toFixed(1)} AU against ${mainKuiperOuterAu.toFixed(1)}`,
+)
+
+/**
+ * The inset centers the ellipse, so its reach from the middle of that frame is
+ * the semi-major axis, and the body disc plus its facing whisker have to clear
+ * the inset boundary at either apse.
+ */
+const INSET_RADIUS = 12
+const INSET_ORBIT_RADIUS = 9.2
+const INSET_BODY_R = 1.25
+const INSET_WHISKER = 0.55 + 0.85
+const insetReach = INSET_ORBIT_RADIUS + INSET_BODY_R + INSET_WHISKER
+assert(
+  insetReach < INSET_RADIUS,
+  `Sedna's inset marker reaches ${insetReach.toFixed(2)} of ${INSET_RADIUS} units`,
+)
+const insetGain = 1 + sednaCatalog.e
+assert(
+  insetGain > 1.5,
+  `centering the ellipse rather than the Sun should be worth the offset, gains only ${insetGain.toFixed(2)}x`,
+)
+const INSET_SUN_R = 0.8
+const insetSunReach = sednaCatalog.e * INSET_ORBIT_RADIUS + INSET_SUN_R
+assert(
+  insetSunReach < INSET_RADIUS,
+  `the inset Sun reaches ${insetSunReach.toFixed(2)} of ${INSET_RADIUS} units`,
+)
+const plutoState = kuiperBeltAt(new Date('2026-01-01T00:00:00Z')).objects.find(
+  (object) => object.id === 'pluto',
+)
+assert(plutoState?.retrograde, 'Pluto should rotate retrograde')
+
+console.log(
+  `ok  Kuiper ephemerides cover 1800–2050; nine unique barycentric bodies, worst stored holdout ${worstKuiperHoldoutError.toExponential(2)} AU; drawn orbits hold to ${(worstKuiperDrawnWobble * 100).toFixed(4)}% of aphelion and ${worstKuiperApsidalWobble.toFixed(4)}° across a knot interval; linear main scale ends at ${mainKuiperOuterAu.toFixed(1)} AU and Sedna inset at ${sednaOuterAu.toFixed(0)} AU`,
+)
+console.log(
+  `ok  Sedna crosses into the ${kuiperFrameAu.toFixed(0)} AU frame between ${sednaEarly.toFixed(0)} and ${sednaLate.toFixed(0)} AU; ellipse-centered inset gains ${insetGain.toFixed(2)}× and reaches ${insetReach.toFixed(1)} of ${INSET_RADIUS} units`,
 )
 
 const geometryEpoch = new Date('2026-01-01T00:00:00Z')

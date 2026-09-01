@@ -1,4 +1,5 @@
 import type { AsteroidId } from './asteroids.ts'
+import type { KuiperObjectId } from './kuiperObjects.ts'
 import type { SatelliteId } from './moons.ts'
 import type { PlanetId, RotationFrameChoice } from './planets.ts'
 
@@ -9,7 +10,9 @@ import type { PlanetId, RotationFrameChoice } from './planets.ts'
  * Model accuracy belongs in the orbit table's help panel. Tidal locking is
  * mentioned only where it is unusual or absent.
  */
-export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId | AsteroidId, string[]>> = {
+export const SELECTION_NOTES: Partial<
+  Record<PlanetId | SatelliteId | AsteroidId | KuiperObjectId, string[]>
+> = {
   mercury: [
     'Mercury is locked in a 3:2 spin–orbit resonance: two spins for every three orbits, so a solar day lasts longer than a year.',
     'The clocks use apparent solar time, not a mean Sun. Around perihelion the true Sun reverses in Mercury’s sky, and the day hand genuinely creeps backward for a few days.',
@@ -127,6 +130,35 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId | AsteroidId
   interamnia: [
     'Interamnia rotates in 8.71234 hours. Its period and pole are measured, but no cartographic prime meridian has been defined, so the clock uses an arbitrary J2000 phase.',
   ],
+  pluto: [
+    'Pluto is locked with Charon: each turns once in 6.39 days, so the same hemispheres always face one another.',
+    'It follows a 3:2 mean-motion resonance with Neptune, completing two orbits for every three of Neptune’s without approaching closely.',
+  ],
+  orcus: [
+    'Orcus shares Pluto’s 3:2 resonance with Neptune but occupies a different resonant phase, earning the nickname “anti-Pluto.”',
+  ],
+  haumea: [
+    'Haumea’s 3.92-hour rotation stretches it into a triaxial ellipsoid and makes it the fastest-spinning known body in hydrostatic equilibrium.',
+  ],
+  quaoar: [
+    'Quaoar has rings outside the classical Roche limit, evidence that cold icy ring particles can resist accreting in ways simple tidal models do not predict.',
+  ],
+  makemake: [
+    'Makemake’s bright methane-rich surface resembles Pluto and Eris, but its much lower light-curve amplitude leaves its spin pole poorly constrained.',
+  ],
+  gonggong: [
+    'Gonggong follows a scattered, highly eccentric orbit and has a dark red surface likely rich in irradiated organic material.',
+  ],
+  eris: [
+    'Eris is slightly smaller than Pluto but more massive. Its discovery forced the 2006 debate that established the dwarf-planet category.',
+  ],
+  sedna: [
+    'Sedna is detached rather than a classical Kuiper-belt object: its perihelion remains around 76 AU, too distant for Neptune to explain its present orbit.',
+    'Its aphelion exceeds 1,000 AU, so the diagram gives its full ellipse a separately labeled proportional scale.',
+  ],
+  salacia: [
+    'Salacia is a large classical trans-Neptunian object with a measured system mass; whether it is rounded enough to qualify as a dwarf planet remains uncertain.',
+  ],
 }
 
 /**
@@ -142,7 +174,10 @@ export const SELECTION_NOTES: Partial<Record<PlanetId | SatelliteId | AsteroidId
  */
 type MeridianLabel = { iau: string; magnetic?: string; cloud?: string }
 
-export const PRIME_MERIDIANS: Record<PlanetId | SatelliteId | AsteroidId, MeridianLabel> = {
+export const PRIME_MERIDIANS: Record<
+  PlanetId | SatelliteId | AsteroidId | KuiperObjectId,
+  MeridianLabel
+> = {
   mercury: { iau: 'PM: Hun Kal at 20° W' },
   venus: { iau: 'PM: Ariadne crater' },
   earth: { iau: 'PM: IERS reference meridian' },
@@ -178,10 +213,19 @@ export const PRIME_MERIDIANS: Record<PlanetId | SatelliteId | AsteroidId, Meridi
   'europa-52': { iau: 'PM: Long axis of shape model' },
   hygiea: { iau: 'PM: None defined' },
   davida: { iau: 'PM: Arbitrary light-curve phase' },
+  pluto: { iau: 'PM: Sub-Charon meridian' },
+  orcus: { iau: 'PM: None defined; phase arbitrary' },
+  salacia: { iau: 'PM: None defined; phase arbitrary' },
+  haumea: { iau: 'PM: None defined; phase arbitrary' },
+  quaoar: { iau: 'PM: None defined; phase arbitrary' },
+  makemake: { iau: 'PM: None defined; phase arbitrary' },
+  gonggong: { iau: 'PM: None defined; phase arbitrary' },
+  eris: { iau: 'PM: None defined; phase arbitrary' },
+  sedna: { iau: 'PM: None defined; phase arbitrary' },
 }
 
 export function primeMeridianLabel(
-  id: PlanetId | SatelliteId | AsteroidId,
+  id: PlanetId | SatelliteId | AsteroidId | KuiperObjectId,
   frame: RotationFrameChoice,
 ): string {
   const label = PRIME_MERIDIANS[id]

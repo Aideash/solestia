@@ -13,6 +13,12 @@ export const router = createRouter({
       meta: { subtitle: 'Asteroid belt' },
     },
     {
+      path: '/kuiper-belt',
+      name: 'kuiper-belt',
+      component: () => import('./views/KuiperBeltPage.vue'),
+      meta: { subtitle: 'Kuiper belt' },
+    },
+    {
       path: '/earth',
       name: 'earth-system',
       component: PlanetSystemPage,

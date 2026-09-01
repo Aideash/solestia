@@ -681,6 +681,13 @@ const selectedMeridian = computed(() => {
           <strong>i</strong> are catalog reference values from the Small-Body Database, while M and
           the perihelion direction are osculating values derived from the interpolated state.
         </p>
+        <p>
+          Distances here are measured from the Sun. That is the right center for the main belt,
+          where Jupiter orbits outside these bodies and they genuinely circle the Sun; referring
+          them to the solar-system barycenter instead makes the derived perihelion direction three
+          to four times less steady. The Kuiper view, whose bodies lie outside every planet, uses
+          the barycenter for the opposite reason.
+        </p>
       </template>
       <template #head-r>
         <button

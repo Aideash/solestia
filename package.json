@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "check": "node --experimental-strip-types --no-warnings scripts/check-kepler.ts",
     "generate:asteroids": "node --experimental-strip-types --no-warnings scripts/generate-asteroid-ephemerides.ts && prettier --write src/data/generated/asteroidEphemerides.ts",
+    "generate:kuiper": "node --experimental-strip-types --no-warnings scripts/generate-kuiper-ephemerides.ts && prettier --write src/data/generated/kuiperEphemerides.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

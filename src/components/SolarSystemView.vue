@@ -646,10 +646,12 @@ function onBodyClick(id: string, event: MouseEvent) {
   emit('select', id)
 }
 
-/** Only a planet with its own system page, and the belt band, can be opened. */
+/** Only a planet with its own system page, or a modeled belt band, can be opened. */
 function requestOpen(id: string) {
   if (isSatelliteSystem.value) return
-  if (id === 'asteroid-belt' || planetSystemFor(id as PlanetState['id'])) emit('open', id)
+  if (id === 'asteroid-belt' || id === 'kuiper-belt' || planetSystemFor(id as PlanetState['id'])) {
+    emit('open', id)
+  }
 }
 
 function onParentDblclick() {
@@ -665,6 +667,12 @@ const navigation = computed((): ReadoutNavigation[] =>
           afterId: 'mars',
           name: 'Main asteroid belt',
           detail: '2.06–3.27 AU',
+        },
+        {
+          id: 'kuiper-belt',
+          afterId: 'neptune',
+          name: 'Kuiper dwarf planets',
+          detail: '30 AU and beyond',
         },
       ],
 )
@@ -895,7 +903,10 @@ const rows = computed((): ReadoutRow[] =>
           <circle
             v-for="band in orbitalBands"
             :key="band.id"
-            :class="{ 'orbital-band': true, 'orbital-band--open': band.id === 'asteroid-belt' }"
+            :class="{
+              'orbital-band': true,
+              'orbital-band--open': band.id === 'asteroid-belt' || band.id === 'kuiper-belt',
+            }"
             :cx="cx"
             :cy="cy"
             :r="band.radius"
@@ -903,6 +914,7 @@ const rows = computed((): ReadoutRow[] =>
             @dblclick="requestOpen(band.id)"
           >
             <title v-if="band.id === 'asteroid-belt'">Open the large asteroid belt objects</title>
+            <title v-else-if="band.id === 'kuiper-belt'">Open the Kuiper dwarf planets</title>
           </circle>
         </g>
         <template v-if="!isSatelliteSystem && !useEdge">
