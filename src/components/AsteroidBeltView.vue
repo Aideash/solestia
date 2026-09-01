@@ -5,20 +5,29 @@ import {
   formatDayClock,
   formatDeg,
   formatEcc,
+  formatHeliocentricDistance,
   formatQuantity,
   formatRad,
   simpleRatio,
   HOURS_PER_DAY,
   JULIAN_YEAR_DAYS,
+  type DistanceUnit,
 } from '../lib/format.ts'
-import { orbitPoint } from '../lib/kepler.ts'
-import type { AsteroidBeltSnapshot } from '../lib/asteroidEphemeris.ts'
+import {
+  orbitPoint,
+  projectEdgeOn,
+  projectEclipticTopDown,
+  splitClosedByDepth,
+} from '../lib/kepler.ts'
+import { asteroidOrbitPositions, type AsteroidBeltSnapshot } from '../lib/asteroidEphemeris.ts'
+import type { ViewPlane } from '../data/planetSystems.ts'
 import type { ReadoutColumn, ReadoutRow } from '../lib/readout.ts'
 import BodyReadout from './BodyReadout.vue'
 
 const props = defineProps<{
   snapshot: AsteroidBeltSnapshot
   selectedAsteroid?: string | null
+  viewPlane?: ViewPlane
   live?: boolean
 }>()
 
@@ -30,8 +39,6 @@ const size = 100
 const cx = size / 2
 const cy = size / 2
 const sunR = 3.5
-const beltInnerR = 27
-const laneInnerR = 30
 const laneOuterR = 42
 const frameR = 46
 const facingGap = 0.2
@@ -39,20 +46,75 @@ const facingMin = 0.35
 const facingMax = 1.25
 const pad = 6
 const viewBox = `${-pad} ${-pad} ${size + pad * 2} ${size + pad * 2}`
-const minA = computed(() => props.snapshot.asteroids[0]?.a ?? 0)
-const maxA = computed(() => props.snapshot.asteroids.at(-1)?.a ?? 1)
 
-function laneRadius(a: number): number {
-  const span = maxA.value - minA.value
-  return span > 0 ? laneInnerR + ((a - minA.value) / span) * (laneOuterR - laneInnerR) : 36
+const useEdge = computed(() => props.viewPlane === 'edge')
+
+/**
+ * The belt is one annulus rather than a system spanning decades of distance,
+ * so it takes a plain proportional scale instead of the orrery's compressed
+ * one: seven semi-major axes packed into 2.4–3.2 AU give that scale almost no
+ * spacing to pin against, and it collapses the whole belt toward the Sun.
+ * Proportional also keeps the camera honest, since a body twice as far from
+ * the Sun draws twice as far from it.
+ */
+const auToRadius = computed(() => {
+  const widest = Math.max(
+    ...props.snapshot.asteroids.map((asteroid) => asteroid.a * (1 + asteroid.e)),
+  )
+  return widest > 0 ? laneOuterR / widest : 1
+})
+
+function scaleAu(distance: number): number {
+  return distance * auToRadius.value
 }
 
-const marks = computed(() =>
-  props.snapshot.asteroids.map((asteroid) => {
+function laneRadius(a: number): number {
+  return scaleAu(a)
+}
+
+/** The main belt at its true radial extent under the same scale, 2.06–3.27 AU. */
+const beltField = computed(() => {
+  const inner = scaleAu(2.06)
+  const outer = scaleAu(3.27)
+  return { radius: (inner + outer) / 2, width: outer - inner }
+})
+
+const projectedMarks = computed(() => {
+  const origin = props.snapshot.earthPerihelionLongitude
+  const at = props.snapshot.at
+  const scale = scaleAu
+  const project = useEdge.value ? projectEdgeOn : projectEclipticTopDown
+  return props.snapshot.asteroids.map((asteroid) => {
     const radius = laneRadius(asteroid.a)
-    const body = orbitPoint(cx, cy, radius, asteroid.offsetFromEarthPerihelion)
-    const label = orbitPoint(cx, cy, radius + 2.2, asteroid.offsetFromEarthPerihelion)
-    const facingOffset = asteroid.facing.longitude - props.snapshot.earthPerihelionLongitude
+    const projected = project(cx, cy, asteroid.position, origin, scale)
+    const samples = asteroidOrbitPositions(asteroid.id, at)
+    const orbitPoints = samples.map((sample) => project(cx, cy, sample, origin, scale))
+    const { far, near } = splitClosedByDepth(orbitPoints, useEdge.value ? 'positive' : 'negative')
+    const peri = samples[0] ? project(cx, cy, samples[0], origin, scale) : projected
+    const periDx = peri.x - cx
+    const periDy = peri.y - cy
+    const periLen = Math.hypot(periDx, periDy)
+    const periInner =
+      periLen > 1e-6
+        ? {
+            x: peri.x - (periDx / periLen) * 1.4,
+            y: peri.y - (periDy / periLen) * 1.4,
+          }
+        : peri
+    const body = { x: projected.x, y: projected.y }
+    const bodyDx = body.x - cx
+    const bodyDy = body.y - cy
+    const bodyLen = Math.hypot(bodyDx, bodyDy)
+    const label =
+      bodyLen > 1e-6
+        ? {
+            x: body.x + (bodyDx / bodyLen) * 3.2,
+            y: body.y + (bodyDy / bodyLen) * 3.2,
+          }
+        : { x: body.x, y: body.y - 3.2 }
+    const labelX = label.x
+    const anchor = Math.abs(labelX - cx) < 3 ? 'middle' : labelX < cx ? 'end' : 'start'
+    const facingOffset = asteroid.facing.longitude - origin
     const facingReach = 1.65 + facingGap
     const facingFrom = orbitPoint(body.x, body.y, facingReach, facingOffset)
     const facingTo = orbitPoint(
@@ -61,25 +123,48 @@ const marks = computed(() =>
       facingReach + facingMin + (facingMax - facingMin) * asteroid.facing.inPlane,
       facingOffset,
     )
-    const periTick = orbitPoint(cx, cy, radius, asteroid.perihelionOffsetFromEarthPerihelion)
-    const periInner = orbitPoint(
-      cx,
-      cy,
-      Math.max(0, radius - 1.4),
-      asteroid.perihelionOffsetFromEarthPerihelion,
-    )
-    const horizontal = label.x - cx
-    const anchor = Math.abs(horizontal) < 3 ? 'middle' : horizontal < 0 ? 'end' : 'start'
-    return { asteroid, radius, body, label, anchor, facingFrom, facingTo, periTick, periInner }
-  }),
+    return {
+      asteroid,
+      radius,
+      body,
+      depth: projected.depth,
+      far,
+      near,
+      stem: { x1: projected.x, y1: cy, x2: projected.x, y2: projected.y },
+      periTick: peri,
+      periInner,
+      facingFrom,
+      facingTo,
+      label,
+      anchor,
+    }
+  })
+})
+
+const projectedBodies = computed(() =>
+  [...projectedMarks.value].sort((a, b) => (useEdge.value ? b.depth - a.depth : a.depth - b.depth)),
 )
 
-const jupiter = computed(() => {
-  const offset = props.snapshot.jupiterOffsetFromEarthPerihelion
+const projectedJupiter = computed(() => {
+  const origin = props.snapshot.earthPerihelionLongitude
+  const position = props.snapshot.jupiterPosition
+  const distance = Math.hypot(position.x, position.y, position.z)
+  const project = useEdge.value ? projectEdgeOn : projectEclipticTopDown
+  const projected = project(cx, cy, position, origin, () => frameR)
+  const dx = projected.x - cx
+  const dy = projected.y - cy
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6 || distance < 1e-12) {
+    return {
+      inner: { x: cx, y: cy },
+      edge: { x: cx + frameR, y: cy },
+      label: { x: cx + frameR + 3.2, y: cy },
+    }
+  }
   return {
-    inner: orbitPoint(cx, cy, laneOuterR + 1, offset),
-    edge: orbitPoint(cx, cy, frameR, offset),
-    label: orbitPoint(cx, cy, frameR + 3.2, offset),
+    inner: { x: cx + (dx / len) * (laneOuterR + 1), y: cy + (dy / len) * (laneOuterR + 1) },
+    edge: { x: cx + (dx / len) * frameR, y: cy + (dy / len) * frameR },
+    label: { x: cx + (dx / len) * (frameR + 3.2), y: cy + (dy / len) * (frameR + 3.2) },
   }
 })
 
@@ -97,6 +182,7 @@ const ROTATION_KIND_WORDS: Record<RotationKind, string> = {
 
 const rotationKind = ref<RotationKind>('sidereal')
 const orbitUnit = ref<OrbitUnit>('earth')
+const distanceUnit = ref<DistanceUnit>('AU')
 
 function toggleRotationKind() {
   rotationKind.value = rotationKind.value === 'sidereal' ? 'solar' : 'sidereal'
@@ -105,6 +191,16 @@ function toggleRotationKind() {
 function toggleOrbitUnit() {
   orbitUnit.value = orbitUnit.value === 'earth' ? 'local' : 'earth'
 }
+
+function toggleDistanceUnit() {
+  distanceUnit.value = distanceUnit.value === 'AU' ? 'km' : 'AU'
+}
+
+const distanceUnitAria = computed(() =>
+  distanceUnit.value === 'AU'
+    ? 'Current distance in AU. Click to show kilometers. Mean, perihelion, and aphelion follow.'
+    : 'Current distance in kilometers. Click to show AU. Mean, perihelion, and aphelion follow.',
+)
 
 const rotationKindAria = computed(
   () =>
@@ -237,7 +333,7 @@ const rows = computed((): ReadoutRow[] =>
       detail: `(${asteroid.number})`,
       cells: {
         diameter: { primary: formatQuantity(asteroid.diameterKm, 'km') },
-        a: { primary: formatQuantity(asteroid.a, 'AU') },
+        a: formatHeliocentricDistance(asteroid.a, distanceUnit.value),
         e: { primary: formatEcc(asteroid.e) },
         rotation: {
           primary: formatQuantity(rotationDays * HOURS_PER_DAY, 'h'),
@@ -255,7 +351,7 @@ const rows = computed((): ReadoutRow[] =>
           primary: formatDeg(asteroid.longitude),
           secondary: formatRad(asteroid.longitude),
         },
-        r: { primary: formatQuantity(asteroid.distanceAu, 'AU') },
+        r: formatHeliocentricDistance(asteroid.distanceAu, distanceUnit.value),
         obliquity: {
           primary: formatDeg(asteroid.obliquity),
           secondary: formatRad(asteroid.obliquity),
@@ -284,8 +380,8 @@ const rows = computed((): ReadoutRow[] =>
           primary: spinOrbit.toFixed(3),
           secondary: simpleRatio(spinOrbit) ?? undefined,
         },
-        q: { primary: formatQuantity(asteroid.a * (1 - asteroid.e), 'AU') },
-        Q: { primary: formatQuantity(asteroid.a * (1 + asteroid.e), 'AU') },
+        q: formatHeliocentricDistance(asteroid.a * (1 - asteroid.e), distanceUnit.value),
+        Q: formatHeliocentricDistance(asteroid.a * (1 + asteroid.e), distanceUnit.value),
       },
     }
   }),
@@ -303,37 +399,41 @@ const selectedMeridian = computed(() => {
       <svg
         :viewBox="viewBox"
         role="img"
-        aria-label="Large objects in the main asteroid belt"
+        :aria-label="
+          useEdge
+            ? 'Large objects in the main asteroid belt, edge-on to the ecliptic'
+            : 'Large objects in the main asteroid belt, viewed from ecliptic north'
+        "
         :class="{ live }"
       >
         <title>Large objects in the main asteroid belt</title>
         <desc>
-          Seven objects are placed at their current heliocentric longitudes. Their radial lanes
-          exaggerate differences in semi-major axis and do not show current distance. Earth’s
-          perihelion is up. A short tick on each lane marks that object’s perihelion. The Jupiter
-          symbol at the edge marks Jupiter’s current direction.
+          {{
+            useEdge
+              ? 'Seven objects and their sampled orbits are shown edge-on to the ecliptic. Vertical is ecliptic north. Screen radius is proportional to heliocentric distance. Bodies nearer along Earth’s perihelion direction are drawn in front. The Jupiter symbol marks Jupiter’s current direction.'
+              : 'Seven objects and their sampled orbits are seen by an orthographic camera north of the ecliptic. Screen radius is proportional to heliocentric distance, so inclined orbits foreshorten toward the Sun. Faint circles mark each semi-major axis. Earth’s perihelion is up. Bodies above the ecliptic are drawn in front. The Jupiter symbol marks Jupiter’s current direction.'
+          }}
         </desc>
 
         <circle class="frame" :cx="cx" :cy="cy" :r="frameR" />
         <circle
+          v-if="!useEdge"
           class="belt-field"
           :cx="cx"
           :cy="cy"
-          :r="(beltInnerR + frameR - 1) / 2"
-          :stroke-width="frameR - 1 - beltInnerR"
+          :r="beltField.radius"
+          :stroke-width="beltField.width"
+        />
+        <line
+          v-if="useEdge"
+          class="ecliptic"
+          :x1="cx - frameR"
+          :y1="cy"
+          :x2="cx + frameR"
+          :y2="cy"
         />
 
-        <g class="lanes" aria-hidden="true">
-          <circle
-            v-for="mark in marks"
-            :key="mark.asteroid.id"
-            :cx="cx"
-            :cy="cy"
-            :r="mark.radius"
-          />
-        </g>
-
-        <g class="axis" aria-hidden="true">
+        <g v-if="!useEdge" class="axis" aria-hidden="true">
           <line :x1="cx" y1="2.5" :x2="cx" y2="5" />
           <text :x="cx" y="1">
             <tspan font-size="1.5em">⊕</tspan>
@@ -348,13 +448,24 @@ const selectedMeridian = computed(() => {
         </g>
 
         <g class="jupiter-mark" aria-hidden="true">
+          <title>Jupiter</title>
           <line
-            :x1="jupiter.inner.x"
-            :y1="jupiter.inner.y"
-            :x2="jupiter.edge.x"
-            :y2="jupiter.edge.y"
+            :x1="projectedJupiter.inner.x"
+            :y1="projectedJupiter.inner.y"
+            :x2="projectedJupiter.edge.x"
+            :y2="projectedJupiter.edge.y"
           />
-          <text :x="jupiter.label.x" :y="jupiter.label.y">♃</text>
+          <text :x="projectedJupiter.label.x" :y="projectedJupiter.label.y">♃</text>
+        </g>
+
+        <g
+          v-for="mark in projectedMarks"
+          :key="`far-${mark.asteroid.id}`"
+          class="orbit-far"
+          :class="{ selected: selectedAsteroid === mark.asteroid.id }"
+          aria-hidden="true"
+        >
+          <path v-for="(d, index) in mark.far" :key="index" class="orbit" :d="d" />
         </g>
 
         <g class="sun" @dblclick="emit('select', 'sun')">
@@ -363,7 +474,16 @@ const selectedMeridian = computed(() => {
         </g>
 
         <g
-          v-for="mark in marks"
+          v-for="mark in projectedMarks"
+          :key="`near-${mark.asteroid.id}`"
+          class="orbit-near"
+          :class="{ selected: selectedAsteroid === mark.asteroid.id }"
+          aria-hidden="true"
+        >
+          <path v-for="(d, index) in mark.near" :key="index" class="orbit" :d="d" />
+        </g>
+        <g
+          v-for="mark in projectedBodies"
           :key="mark.asteroid.id"
           class="asteroid"
           :class="{
@@ -375,10 +495,18 @@ const selectedMeridian = computed(() => {
         >
           <title>
             ({{ mark.asteroid.number }}) {{ mark.asteroid.name }} —
-            {{ formatDeg(mark.asteroid.longitude) }} heliocentric longitude; perihelion
-            {{ formatDeg(mark.asteroid.perihelionLongitude) }};
+            {{ formatDeg(mark.asteroid.longitude) }} heliocentric longitude; inclination
+            {{ formatDeg(mark.asteroid.inclination) }};
             {{ primeMeridianLabel(mark.asteroid.id, 'iau') }}
           </title>
+          <!-- <line
+            v-if="useEdge"
+            class="asteroid__stem"
+            :x1="mark.stem.x1"
+            :y1="mark.stem.y1"
+            :x2="mark.stem.x2"
+            :y2="mark.stem.y2"
+          /> -->
           <line
             class="asteroid__peri"
             :x1="mark.periInner.x"
@@ -387,6 +515,7 @@ const selectedMeridian = computed(() => {
             :y2="mark.periTick.y"
           />
           <line
+            v-if="!useEdge"
             class="asteroid__facing"
             :x1="mark.facingFrom.x"
             :y1="mark.facingFrom.y"
@@ -426,19 +555,23 @@ const selectedMeridian = computed(() => {
           for a shape.
         </p>
         <p>
-          <strong>a</strong> is the semi-major axis, which is what sets each object’s lane above.
-          The lanes are spread far wider than the real spacing, so they rank mean distance rather
-          than measure it, and they say nothing about the current distance <strong>r</strong> — an
-          eccentric orbit can put an inner object outside an outer one for part of its year.
+          <strong>a</strong> is the semi-major axis, which sets the faint circle each object’s orbit
+          is measured against above. Screen radius is simply proportional to distance, so the belt
+          is drawn to scale and the objects sit in a narrow annulus: Ceres and Pallas share a circle
+          because their mean distances really do agree to a few thousandths of an AU.
+          <strong>r</strong> is the full three-dimensional distance, so an inclined object draws a
+          little inside its circle even at that distance. Click the heading to lead with AU or km;
+          <strong>a</strong>, <strong>q</strong>, and <strong>Q</strong> follow.
           <strong>q</strong> and <strong>Q</strong> are the perihelion and aphelion distances that
           <strong>e</strong> implies.
         </p>
         <p>
           <strong>λ</strong> (lambda) is heliocentric ecliptic longitude, measured from the J2000
-          vernal equinox, and it is the angle each object is drawn at. <strong>i</strong> is
-          inclination to the J2000 ecliptic; Pallas is tipped almost 35°, so the flat diagram
-          flatters it. <strong>M</strong> is the osculating mean anomaly, the uniform fraction of
-          the orbit since perihelion.
+          vernal equinox. The ecliptic view is an orthographic camera from ecliptic north, so
+          <strong>i</strong> foreshortens the orbit; Pallas’s almost 35° tilt is visible in its oval
+          trace. Edge rotates that camera 90° and shows the same tilt as height above the ecliptic.
+          <strong>M</strong> is the osculating mean anomaly, the uniform fraction of the orbit since
+          perihelion.
         </p>
         <p>
           <strong>P<sub>rot</sub></strong> is the IAU sidereal spin. Click the heading for the solar
@@ -455,13 +588,25 @@ const selectedMeridian = computed(() => {
           and period with an arbitrary zero.
         </p>
         <p>
-          <strong>Accuracy.</strong> Positions are cubic Hermite interpolations of JPL Horizons
-          state vectors rather than a fit to mean elements, so λ and r are good to well under an arc
-          second inside the sampled window and pin to its edges outside. <strong>a</strong>,
-          <strong>e</strong> and <strong>i</strong> are catalog reference values from the Small-Body
-          Database, while M and the perihelion direction are osculating values derived from the
-          interpolated state.
+          <strong>Accuracy.</strong> Positions are interpolated from JPL Horizons state vectors half
+          a year apart rather than fitted to mean elements. The curve between two of them matches
+          position, velocity and gravitational acceleration at both ends, which holds λ within a few
+          arc seconds inside the sampled window — half an arc minute for Pallas, the most eccentric
+          of the seven — and pins to its edges outside. <strong>a</strong>, <strong>e</strong> and
+          <strong>i</strong> are catalog reference values from the Small-Body Database, while M and
+          the perihelion direction are osculating values derived from the interpolated state.
         </p>
+      </template>
+      <template #head-r>
+        <button
+          type="button"
+          class="th-toggle"
+          :aria-label="distanceUnitAria"
+          @click="toggleDistanceUnit"
+        >
+          <span class="th-sym">r</span>
+          <span class="th-mode">{{ distanceUnit }}</span>
+        </button>
       </template>
       <template #head-rotation>
         <button
@@ -496,8 +641,9 @@ const selectedMeridian = computed(() => {
 
     <div class="belt-view__footnotes">
       <p class="belt-view__note">
-        Radial separation is expanded for clarity; it encodes mean distance, not the object’s
-        instantaneous distance. Positions are interpolated from JPL Horizons state vectors.
+        Screen radius is proportional to heliocentric distance, so the belt is drawn to scale and
+        crowds into one annulus. Positions are interpolated from JPL Horizons state vectors. Edge
+        rotates the ecliptic camera 90°; vertical is ecliptic north.
       </p>
       <p v-if="selectedMeridian" class="belt-view__meridian">{{ selectedMeridian }}</p>
     </div>
@@ -526,6 +672,29 @@ svg {
   height: 100%;
   overflow: visible;
 }
+
+.ecliptic {
+  stroke: $color-text-muted;
+  stroke-width: 0.28;
+  stroke-dasharray: 1 1.2;
+  opacity: 0.7;
+}
+
+.orbit {
+  fill: none;
+  stroke: color-mix(in srgb, $color-text-muted 45%, transparent);
+  stroke-width: 0.28;
+}
+
+.orbit-far .orbit {
+  opacity: 0.65;
+}
+
+// .asteroid__stem {
+//   stroke: color-mix(in srgb, var(--body-color) 40%, transparent);
+//   stroke-width: 0.22;
+//   pointer-events: none;
+// }
 
 .frame {
   fill: none;
@@ -559,8 +728,8 @@ svg {
 .jupiter-mark {
   fill: $color-text-muted;
   font-size: 4.1px;
-  pointer-events: none;
   text-anchor: middle;
+  cursor: default;
 }
 
 .jupiter-mark line {
@@ -589,6 +758,32 @@ svg {
 
 .sun {
   cursor: pointer;
+}
+
+g.orbit-near,
+g.orbit-far {
+  cursor: pointer;
+
+  &.selected .orbit {
+    stroke: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  &:hover {
+    opacity: 0.6;
+  }
+
+  &.selected:hover {
+    opacity: 0.8;
+  }
+}
+
+svg:has(g.selected) {
+  g.orbit-near,
+  g.orbit-far {
+    &:not(.selected):not(:hover) {
+      opacity: 0.4;
+    }
+  }
 }
 
 .asteroid {

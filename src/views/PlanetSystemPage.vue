@@ -6,6 +6,7 @@ import SystemStage from '../components/SystemStage.vue'
 import {
   PLANET_SYSTEMS,
   VIEW_PLANE_CHOICES,
+  cycleViewPlane,
   type PlanetSystemId,
   type ViewPlane,
 } from '../data/planetSystems.ts'
@@ -36,9 +37,8 @@ watch(
   },
 )
 
-function cycleViewPlane() {
-  const i = VIEW_PLANE_CHOICES.indexOf(viewPlane.value)
-  viewPlane.value = VIEW_PLANE_CHOICES[(i + 1) % VIEW_PLANE_CHOICES.length]
+function cyclePlanetViewPlane() {
+  viewPlane.value = cycleViewPlane(viewPlane.value, VIEW_PLANE_CHOICES)
 }
 
 function toggleSatellite(id: string) {
@@ -75,14 +75,14 @@ function toggleSatellite(id: string) {
       <button
         type="button"
         class="frame-toggle"
-        title="Ecliptic keeps Earth’s perihelion at the top, matching the solar-system orrery. Equator looks down the parent’s IAU pole so the moons run evenly and the Sun’s azimuth carries the seasons."
-        :aria-label="`View plane ${viewPlane}. Click to cycle ecliptic, equator.`"
-        @click="cycleViewPlane"
+        title="Ecliptic is an orthographic camera north of the ecliptic, with Earth’s perihelion up, so inclined orbits foreshorten. Equator looks down the parent’s IAU pole so the moons run evenly and the Sun’s azimuth carries the seasons. Edge rotates the ecliptic camera 90°."
+        :aria-label="`View plane ${viewPlane}. Click to cycle ecliptic, equator, edge.`"
+        @click="cyclePlanetViewPlane"
       >
         <span class="frame-toggle__label">plane</span>
         <span class="frame-toggle__mode">{{ viewPlane }}</span>
       </button>
-      <RouterLink class="back" to="/">← solar system</RouterLink>
+      <RouterLink class="back" to="/">← Solar system</RouterLink>
     </template>
     <template #outer>
       <PlanetClock

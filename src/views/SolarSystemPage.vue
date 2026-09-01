@@ -4,7 +4,12 @@ import { useRouter } from 'vue-router'
 import PlanetClock from '../components/PlanetClock.vue'
 import SolarSystemView from '../components/SolarSystemView.vue'
 import SystemStage from '../components/SystemStage.vue'
-import { planetSystemFor } from '../data/planetSystems.ts'
+import {
+  cycleViewPlane,
+  HELIOCENTRIC_VIEW_PLANE_CHOICES,
+  planetSystemFor,
+  type ViewPlane,
+} from '../data/planetSystems.ts'
 import { ROTATION_FRAME_CHOICES, type RotationFrameChoice } from '../data/planets.ts'
 import { epochKey } from '../epoch.ts'
 import { solarSystemAt } from '../lib/kepler.ts'
@@ -14,6 +19,7 @@ if (!epoch) throw new Error('Epoch context is missing')
 
 const router = useRouter()
 const rotationFrame = ref<RotationFrameChoice>('iau')
+const viewPlane = ref<ViewPlane>('ecliptic')
 const selectedPlanet = epoch.selectedId
 
 const snapshot = computed(() => solarSystemAt(epoch.viewed.value, rotationFrame.value))
@@ -23,6 +29,10 @@ const outerPlanets = computed(() => snapshot.value.planets.slice(4))
 function cycleRotationFrame() {
   const i = ROTATION_FRAME_CHOICES.indexOf(rotationFrame.value)
   rotationFrame.value = ROTATION_FRAME_CHOICES[(i + 1) % ROTATION_FRAME_CHOICES.length]
+}
+
+function cycleSolarViewPlane() {
+  viewPlane.value = cycleViewPlane(viewPlane.value, HELIOCENTRIC_VIEW_PLANE_CHOICES)
 }
 
 function togglePlanet(id: string) {
@@ -55,12 +65,23 @@ function openSystem(id: string) {
       <SolarSystemView
         :snapshot="snapshot"
         :selected-planet="selectedPlanet"
+        :view-plane="viewPlane"
         :live="epoch.live.value"
         @select="togglePlanet"
         @open="openSystem"
       />
     </template>
     <template #controls>
+      <button
+        type="button"
+        class="frame-toggle"
+        title="Ecliptic is an orthographic camera north of Earth’s orbit, with perihelion up, so inclined orbits foreshorten. Edge rotates that camera 90°."
+        :aria-label="`View plane ${viewPlane}. Click to cycle ecliptic, edge.`"
+        @click="cycleSolarViewPlane"
+      >
+        <span class="frame-toggle__label">plane</span>
+        <span class="frame-toggle__mode">{{ viewPlane }}</span>
+      </button>
       <button
         type="button"
         class="frame-toggle"

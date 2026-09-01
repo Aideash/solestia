@@ -1,7 +1,23 @@
 /** Value formatting shared by the readout tables of every system view. */
 
+import { KM_PER_AU } from './kepler.ts'
+
 export const HOURS_PER_DAY = 24
 export const JULIAN_YEAR_DAYS = 365.25
+
+export type DistanceUnit = 'AU' | 'km'
+
+/** Heliocentric distance as a unit pair so the table can swap which line leads. */
+export function formatHeliocentricDistance(
+  au: number,
+  unit: DistanceUnit,
+): { primary: string; secondary: string } {
+  const auText = formatQuantity(au, 'AU')
+  const kmText = formatQuantity(au * KM_PER_AU, 'km')
+  return unit === 'km'
+    ? { primary: kmText, secondary: auText }
+    : { primary: auText, secondary: kmText }
+}
 
 /** Roughly four significant figures, so column widths stay comparable. */
 export function formatQuantity(value: number, unit: string): string {

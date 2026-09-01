@@ -9,15 +9,22 @@ import {
   formatDuration,
   formatEcc,
   formatFineDeg,
+  formatHeliocentricDistance,
   formatQuantity,
   formatRad,
   simpleRatio,
   HOURS_PER_DAY,
   JULIAN_YEAR_DAYS,
+  type DistanceUnit,
 } from '../lib/format.ts'
 import {
   eccentricityWobble,
+  keplerOrbitPositions,
   orbitPoint,
+  projectEdgeOn,
+  projectEclipticTopDown,
+  satelliteRelativeOrbitPositions,
+  splitClosedByDepth,
   wrapRad,
   type PlanetSystemSnapshot,
   type PlanetState,
@@ -61,6 +68,8 @@ const useEquator = computed(
     isSatelliteSystem.value &&
     (props.viewPlane ?? planetSystem.value?.defaultViewPlane) === 'equator',
 )
+const useEdge = computed(() => props.viewPlane === 'edge')
+const useProjectedCamera = computed(() => !useEquator.value)
 
 const size = 100
 const cx = size / 2
@@ -129,6 +138,7 @@ const rotationKindWords = computed<Record<RotationKind, string>>(() => ({
 
 const chosenRotationKind = ref<RotationKind>('sidereal')
 const orbitUnit = ref<OrbitUnit>('earth')
+const distanceUnit = ref<DistanceUnit>('AU')
 
 const rotationKinds = computed(() =>
   isSatelliteSystem.value ? ROTATION_KINDS_SATELLITE : ROTATION_KINDS_SOLAR,
@@ -218,6 +228,13 @@ const COLUMN_CATALOG_SOLAR: ReadoutColumn[] = [
     title: 'Sidereal orbits per spin',
     onByDefault: false,
   },
+  {
+    id: 'r',
+    heading: 'r',
+    label: 'Current distance (r)',
+    title: 'Current heliocentric distance',
+    onByDefault: true,
+  },
   { id: 'a', heading: 'a', label: 'Mean distance (a)', title: 'Mean distance', onByDefault: false },
   {
     id: 'q',
@@ -253,6 +270,9 @@ const COLUMN_CATALOG_SATELLITE = computed((): ReadoutColumn[] => {
       heading: 'lib',
       label: 'Optical libration (lib)',
       title: `Libration of ${system?.name ?? 'the parent'} about the sub-parent point`,
+    },
+    r: {
+      title: `Current distance from ${system?.name ?? 'the parent'}`,
     },
     q: {
       label: `${capitalize(system?.periapsisName)} distance (q)`,
@@ -326,6 +346,16 @@ const rotationKindAria = computed(
 function toggleOrbitUnit() {
   orbitUnit.value = orbitUnit.value === 'earth' ? 'local' : 'earth'
 }
+
+function toggleDistanceUnit() {
+  distanceUnit.value = distanceUnit.value === 'AU' ? 'km' : 'AU'
+}
+
+const distanceUnitAria = computed(() =>
+  distanceUnit.value === 'AU'
+    ? 'Current distance in AU. Click to show kilometers. Mean, perihelion, and aphelion follow.'
+    : 'Current distance in kilometers. Click to show AU. Mean, perihelion, and aphelion follow.',
+)
 
 const distanceScale = computed(() => {
   const orbitOuter = isSatelliteSystem.value
@@ -453,6 +483,112 @@ const upTick = computed(() => {
   }
 })
 
+function relativeEcliptic(planet: OrreryBody): { x: number; y: number; z: number } {
+  if (!isPlanetSystemSnapshot(props.snapshot)) return planet.position
+  const { parent } = props.snapshot
+  return {
+    x: planet.position.x - parent.position.x,
+    y: planet.position.y - parent.position.y,
+    z: planet.position.z - parent.position.z,
+  }
+}
+
+const projectedRings = computed(() => {
+  const origin = props.snapshot.earthPerihelionLongitude
+  const scale = distanceScale.value
+  const at = props.snapshot.at
+  const project = useEdge.value ? projectEdgeOn : projectEclipticTopDown
+  return bodies.value.map((planet) => {
+    const isMoon = 'equatorLongitude' in planet
+    const position = relativeEcliptic(planet)
+    const projected = project(cx, cy, position, origin, scale)
+    const samples = isMoon
+      ? satelliteRelativeOrbitPositions(planet.id, at)
+      : keplerOrbitPositions(
+          planet.a,
+          planet.e,
+          planet.inclination,
+          planet.nodeLongitude,
+          planet.perihelionLongitude,
+        )
+    const orbitPoints = samples.map((sample) => project(cx, cy, sample, origin, scale))
+    const { far, near } = splitClosedByDepth(orbitPoints, useEdge.value ? 'positive' : 'negative')
+    const periSample = samples[0]
+    const peri = periSample ? project(cx, cy, periSample, origin, scale) : projected
+    const periDx = peri.x - cx
+    const periDy = peri.y - cy
+    const periLen = Math.hypot(periDx, periDy)
+    const periInner =
+      periLen > 1e-6
+        ? {
+            x: peri.x - (periDx / periLen) * 1.4,
+            y: peri.y - (periDy / periLen) * 1.4,
+          }
+        : peri
+    const bodyR = planet.id === 'earth' ? 1.7 : 1.45
+    const facingOffset = wrapRad(planet.facing.longitude - origin)
+    const facingReach = bodyR + facingGap
+    const facingFrom = orbitPoint(projected.x, projected.y, facingReach, facingOffset)
+    const facingTo = orbitPoint(
+      projected.x,
+      projected.y,
+      facingReach + facingMin + (facingMax - facingMin) * planet.facing.inPlane,
+      facingOffset,
+    )
+    const latitude = formatDeg(Math.atan2(position.z, Math.hypot(position.x, position.y)))
+    const label = useEdge.value
+      ? `${planet.name} — ecliptic latitude ${latitude}`
+      : `${planet.name} — ecliptic longitude ${formatDeg(planet.longitude)}, latitude ${latitude}`
+    return {
+      planet,
+      bodyR,
+      body: { x: projected.x, y: projected.y },
+      depth: projected.depth,
+      far,
+      near,
+      stem: { x1: projected.x, y1: cy, x2: projected.x, y2: projected.y },
+      periTick: peri,
+      periInner,
+      facingFrom,
+      facingTo,
+      label,
+    }
+  })
+})
+
+const projectedBodies = computed(() =>
+  [...projectedRings.value].sort((a, b) => (useEdge.value ? b.depth - a.depth : a.depth - b.depth)),
+)
+
+const edgeSunTick = computed(() => {
+  if (!isPlanetSystemSnapshot(props.snapshot) || !useEdge.value) return null
+  const sun = {
+    x: -props.snapshot.parent.position.x,
+    y: -props.snapshot.parent.position.y,
+    z: -props.snapshot.parent.position.z,
+  }
+  const rho = Math.hypot(sun.x, sun.y, sun.z)
+  if (rho < 1e-12) return null
+  const unit = { x: sun.x / rho, y: sun.y / rho, z: sun.z / rho }
+  const projected = projectEdgeOn(
+    cx,
+    cy,
+    unit,
+    props.snapshot.earthPerihelionLongitude,
+    (distance) => distance,
+  )
+  const dx = projected.x - cx
+  const dy = projected.y - cy
+  const len = Math.hypot(dx, dy)
+  if (len < 1e-6) return null
+  const reach = outerR + 2.2
+  return {
+    inner: { x: cx + (dx / len) * (sunR + 0.6), y: cy + (dy / len) * (sunR + 0.6) },
+    outer: { x: cx + (dx / len) * reach, y: cy + (dy / len) * reach },
+    label: { x: cx + (dx / len) * reach, y: cy + (dy / len) * reach },
+  }
+})
+
 const viewBoxHeight = size + 2 * padY
 
 /** Satellite systems are always drawn in the parent's IAU frame. */
@@ -467,7 +603,9 @@ const selectionCallout = computed(() => {
   if (!id) return null
   const paragraphs = SELECTION_NOTES[id as keyof typeof SELECTION_NOTES]
   if (!paragraphs?.length) return null
-  const ring = rings.value.find((item) => item.planet.id === id)
+  const ring = (useProjectedCamera.value ? projectedRings.value : rings.value).find(
+    (item) => item.planet.id === id,
+  )
   if (!ring) return null
   const { x, y } = ring.body
   return {
@@ -504,12 +642,12 @@ const navigation = computed((): ReadoutNavigation[] =>
           id: 'asteroid-belt',
           afterId: 'mars',
           name: 'Main asteroid belt',
-          detail: '2.06–3.27 AU · 7 featured bodies · Open →',
+          detail: '2.06–3.27 AU',
         },
       ],
 )
 
-/** Moons read in km and parent radii; planets in AU. */
+/** Moons read in km and parent radii; planets in AU or km, with the other unit dimmed. */
 function distanceCell(planet: OrreryBody, factor: number): ReadoutCell {
   if (planetSystem.value && 'aKm' in planet) {
     const km = planet.aKm * factor
@@ -518,7 +656,7 @@ function distanceCell(planet: OrreryBody, factor: number): ReadoutCell {
       secondary: formatQuantity(km / planetSystem.value.radiusKm, planetSystem.value.radiusSymbol),
     }
   }
-  return { primary: formatQuantity(planet.a * factor, 'AU') }
+  return formatHeliocentricDistance(planet.a * factor, distanceUnit.value)
 }
 
 const rows = computed((): ReadoutRow[] =>
@@ -620,6 +758,7 @@ const rows = computed((): ReadoutRow[] =>
         a: distanceCell(planet, 1),
         q: distanceCell(planet, 1 - planet.e),
         Q: distanceCell(planet, 1 + planet.e),
+        r: distanceCell(planet, planet.orbitRadiusRatio),
       },
     }
   }),
@@ -679,10 +818,14 @@ const rows = computed((): ReadoutRow[] =>
         role="img"
         :aria-label="
           isSatelliteSystem
-            ? useEquator
-              ? `${planetSystem?.name} system orrery in the parent equator, Earth perihelion projected at the top`
-              : `${planetSystem?.name} system orrery on a compressed distance scale, Earth perihelion at the top`
-            : 'Solar system orrery on a compressed distance scale, Earth perihelion at the top'
+            ? useEdge
+              ? `${planetSystem?.name} system orrery edge-on to the ecliptic, compressed distance scale`
+              : useEquator
+                ? `${planetSystem?.name} system orrery in the parent equator, Earth perihelion projected at the top`
+                : `${planetSystem?.name} system orrery viewed from ecliptic north, compressed distance scale`
+            : useEdge
+              ? 'Solar system orrery edge-on to the ecliptic, compressed distance scale'
+              : 'Solar system orrery viewed from ecliptic north, compressed distance scale'
         "
       >
         <title>
@@ -699,18 +842,34 @@ const rows = computed((): ReadoutRow[] =>
         <desc>
           {{
             isSatelliteSystem
-              ? useEquator
-                ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed in ${planetSystem?.name}’s equator. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is projected at the top. The Sun’s azimuth is seasonal. Each moon’s whisker shows where its prime meridian points.`
-                : `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is at the top. The Sun is marked at the anti-${planetSystem?.name} direction. Each moon’s whisker shows where its prime meridian points.`
-              : 'Orbits of Mercury through Neptune about the focus at the Sun. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is at the top, aphelion at the bottom. Each planet sits at its current distance and longitude, with a short whisker showing where its prime meridian points. The Sun at the center carries the same whisker for its Carrington prime meridian.'
+              ? useEdge
+                ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed edge-on to the ecliptic. Vertical is ecliptic north. A body out to the side shows its full ecliptic latitude; one coming toward or going away from the viewer is foreshortened. Mean distances are spread evenly and the radial scale is compressed between them. Bodies nearer along Earth’s perihelion direction are drawn in front.`
+                : useEquator
+                  ? `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, viewed in ${planetSystem?.name}’s equator. Mean distances are spread evenly and the radial scale is compressed between them, so radial swings read smaller than they are. Earth’s perihelion is projected at the top. The Sun’s azimuth is seasonal. Each moon’s whisker shows where its prime meridian points.`
+                  : `Orbits of ${planetSystem?.orbitGroupName} about the focus at ${planetSystem?.name}, seen by an orthographic camera north of the ecliptic. Inclined orbits are foreshortened in the ecliptic plane; the Uranian moons therefore appear as thin slivers and pass close to the focus. Mean distances are spread evenly and the radial scale is compressed between them. Earth’s perihelion is up. Bodies above the ecliptic are drawn in front. The table’s r remains the full three-dimensional distance.`
+              : useEdge
+                ? 'Orbits of Mercury through Neptune about the focus at the Sun, viewed edge-on to the ecliptic. Vertical is ecliptic north. A planet out to the side shows its full ecliptic latitude; one coming toward or going away from the viewer is foreshortened. Mean distances are spread evenly and the radial scale is compressed between them. Bodies nearer along Earth’s perihelion direction are drawn in front.'
+                : 'Orbits of Mercury through Neptune about the focus at the Sun, seen by an orthographic camera north of the ecliptic. Inclined orbits are foreshortened in the ecliptic plane. Mean distances are spread evenly and the radial scale is compressed between them. Earth’s perihelion is at the top, aphelion at the bottom. Bodies above the ecliptic are drawn in front. Each planet carries a short whisker showing where its prime meridian points.'
           }}
-          <template v-if="orbitalBands.length">
+          <template v-if="orbitalBands.length && (!isSatelliteSystem || useEquator)">
             The shaded annulus marks {{ orbitalBands.map((band) => band.name).join(', ') }} at its
             physical radial extent.
           </template>
         </desc>
-        <line class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
-        <g v-if="orbitalBands.length" class="orbital-bands" aria-hidden="true">
+        <line
+          v-if="useEdge"
+          class="axis"
+          :x1="cx - outerR - 1"
+          :y1="cy"
+          :x2="cx + outerR + 1"
+          :y2="cy"
+        />
+        <line v-else class="axis" :x1="cx" :y1="cy - outerR - 1" :x2="cx" :y2="cy + outerR + 1" />
+        <g
+          v-if="orbitalBands.length && (!isSatelliteSystem || useEquator) && !useEdge"
+          class="orbital-bands"
+          aria-hidden="true"
+        >
           <circle
             v-for="band in orbitalBands"
             :key="band.id"
@@ -724,7 +883,7 @@ const rows = computed((): ReadoutRow[] =>
             <title v-if="band.id === 'asteroid-belt'">Open the large asteroid belt objects</title>
           </circle>
         </g>
-        <template v-if="!isSatelliteSystem">
+        <template v-if="!isSatelliteSystem && !useEdge">
           <text class="axis-label" :x="perihelionMark.x" :y="perihelionMark.y" text-anchor="middle">
             ⊕
             <tspan baseline-shift="sub" font-size="0.75em">peri</tspan>
@@ -741,7 +900,7 @@ const rows = computed((): ReadoutRow[] =>
             <title>Aphelion - Farthest Point from the Sun</title>
           </text>
         </template>
-        <template v-else>
+        <template v-else-if="isSatelliteSystem && !useEdge">
           <line
             v-if="upTick"
             class="peri-tick"
@@ -778,46 +937,78 @@ const rows = computed((): ReadoutRow[] =>
             </text>
           </g>
         </template>
-        <g
-          v-for="ring in rings"
-          :key="ring.planet.id"
-          :class="{ 'satellite-group': true, selected: selectedPlanet === ring.planet.id }"
-          @click="onBodyClick(ring.planet.id, $event)"
-          @dblclick="requestOpen(ring.planet.id)"
-        >
-          <title>{{ ring.label }}</title>
-          <path class="orbit" :d="ring.path" />
+        <template v-else-if="isSatelliteSystem && edgeSunTick">
           <line
-            v-if="showPerihelion"
-            class="peri-tick"
-            :x1="ring.periInner.x"
-            :y1="ring.periInner.y"
-            :x2="ring.periTick.x"
-            :y2="ring.periTick.y"
+            class="sun-ray"
+            :x1="edgeSunTick.inner.x"
+            :y1="edgeSunTick.inner.y"
+            :x2="edgeSunTick.outer.x"
+            :y2="edgeSunTick.outer.y"
           />
-          <circle
-            class="body"
-            :cx="ring.body.x"
-            :cy="ring.body.y"
-            :r="ring.bodyR"
-            :fill="ring.planet.color"
-            :style="{ '--body-color': ring.planet.color }"
-          />
-          <line
-            v-if="showFacing"
-            class="facing"
-            :x1="ring.facingFrom.x"
-            :y1="ring.facingFrom.y"
-            :x2="ring.facingTo.x"
-            :y2="ring.facingTo.y"
-            :stroke="ring.planet.color"
-          />
-        </g>
+          <text
+            class="axis-label"
+            :x="edgeSunTick.label.x"
+            :y="edgeSunTick.label.y"
+            text-anchor="middle"
+          >
+            ☉
+            <title>
+              Direction of the Sun from {{ planetSystem?.name }}, edge-on to the ecliptic
+            </title>
+          </text>
+        </template>
+        <template v-if="useProjectedCamera">
+          <g
+            v-for="ring in projectedRings"
+            :key="`far-${ring.planet.id}`"
+            class="orbit-far"
+            aria-hidden="true"
+          >
+            <path v-for="(d, index) in ring.far" :key="index" class="orbit" :d="d" />
+          </g>
+        </template>
+        <template v-else>
+          <g
+            v-for="ring in rings"
+            :key="ring.planet.id"
+            :class="{ 'satellite-group': true, selected: selectedPlanet === ring.planet.id }"
+            @click="onBodyClick(ring.planet.id, $event)"
+            @dblclick="requestOpen(ring.planet.id)"
+          >
+            <title>{{ ring.label }}</title>
+            <path class="orbit" :d="ring.path" />
+            <line
+              v-if="showPerihelion"
+              class="peri-tick"
+              :x1="ring.periInner.x"
+              :y1="ring.periInner.y"
+              :x2="ring.periTick.x"
+              :y2="ring.periTick.y"
+            />
+            <circle
+              class="body"
+              :cx="ring.body.x"
+              :cy="ring.body.y"
+              :r="ring.bodyR"
+              :fill="ring.planet.color"
+              :style="{ '--body-color': ring.planet.color }"
+            />
+            <line
+              v-if="showFacing"
+              class="facing"
+              :x1="ring.facingFrom.x"
+              :y1="ring.facingFrom.y"
+              :x2="ring.facingTo.x"
+              :y2="ring.facingTo.y"
+              :stroke="ring.planet.color"
+            />
+          </g>
+        </template>
         <g v-if="sunMark" class="sun-mark">
           <title>{{ sunMark.label }}</title>
           <circle class="sun" :cx="cx" :cy="cy" :r="sunR" />
           <line
-            v-if="showSunFacing"
+            v-if="showSunFacing && !useEdge"
             class="sun-facing"
             :x1="sunMark.from.x"
             :y1="sunMark.from.y"
@@ -829,7 +1020,7 @@ const rows = computed((): ReadoutRow[] =>
           <title>{{ parentMark.label }}</title>
           <circle class="planet-center" :cx="cx" :cy="cy" :r="sunR" :fill="parentMark.color" />
           <line
-            v-if="showSunFacing"
+            v-if="showSunFacing && !useEdge"
             class="planet-center-facing"
             :x1="parentMark.from.x"
             :y1="parentMark.from.y"
@@ -838,6 +1029,58 @@ const rows = computed((): ReadoutRow[] =>
             :style="{ stroke: parentMark.color }"
           />
         </g>
+        <template v-if="useProjectedCamera">
+          <g
+            v-for="ring in projectedRings"
+            :key="`near-${ring.planet.id}`"
+            class="orbit-near"
+            aria-hidden="true"
+          >
+            <path v-for="(d, index) in ring.near" :key="index" class="orbit" :d="d" />
+          </g>
+          <g
+            v-for="ring in projectedBodies"
+            :key="ring.planet.id"
+            :class="{ 'satellite-group': true, selected: selectedPlanet === ring.planet.id }"
+            @click="onBodyClick(ring.planet.id, $event)"
+            @dblclick="requestOpen(ring.planet.id)"
+          >
+            <title>{{ ring.label }}</title>
+            <!-- <line
+              v-if="useEdge"
+              class="edge-stem"
+              :x1="ring.stem.x1"
+              :y1="ring.stem.y1"
+              :x2="ring.stem.x2"
+              :y2="ring.stem.y2"
+            /> -->
+            <line
+              v-if="showPerihelion"
+              class="peri-tick"
+              :x1="ring.periInner.x"
+              :y1="ring.periInner.y"
+              :x2="ring.periTick.x"
+              :y2="ring.periTick.y"
+            />
+            <circle
+              class="body"
+              :cx="ring.body.x"
+              :cy="ring.body.y"
+              :r="ring.bodyR"
+              :fill="ring.planet.color"
+              :style="{ '--body-color': ring.planet.color }"
+            />
+            <line
+              v-if="showFacing && !useEdge"
+              class="facing"
+              :x1="ring.facingFrom.x"
+              :y1="ring.facingFrom.y"
+              :x2="ring.facingTo.x"
+              :y2="ring.facingTo.y"
+              :stroke="ring.planet.color"
+            />
+          </g>
+        </template>
       </svg>
       <aside
         v-if="selectionCallout"
@@ -879,7 +1122,10 @@ const rows = computed((): ReadoutRow[] =>
           <p>
             Screen radius rises with real distance, but not proportionally: the mean distances are
             spread evenly and the scale is compressed between them, so Mercury and Neptune share one
-            frame. Distances stay comparable, but every radial swing draws smaller than it is.
+            frame. Distances stay comparable, but every radial swing draws smaller than it is. The
+            ecliptic view is an orthographic camera looking from ecliptic north, so inclination
+            foreshortens the orbit on screen. Edge rotates that camera 90°: vertical is ecliptic
+            north, and bodies nearer along Earth’s perihelion direction paint in front.
           </p>
           <p>
             <strong>ε</strong> (epsilon) is obliquity — the tilt of the spin axis from ecliptic
@@ -899,9 +1145,10 @@ const rows = computed((): ReadoutRow[] =>
             system chosen at the top of the page. <strong>rot</strong> is how far the selected
             meridian has come through its solar day (0% at local midnight).
             <strong>P<sub>orb</sub>/P<sub>rot</sub></strong> is sidereal orbits per spin; a nearby
-            small integer ratio is shown when the match is close (Mercury 3:2). <strong>a</strong>,
-            <strong>q</strong>, and <strong>Q</strong> are mean, perihelion, and aphelion distances
-            in AU.
+            small integer ratio is shown when the match is close (Mercury 3:2).
+            <strong>r</strong> is the current heliocentric distance. Click the heading to lead with
+            AU or km; <strong>a</strong>, <strong>q</strong>, and <strong>Q</strong> follow. Those
+            three are mean, perihelion, and aphelion.
           </p>
           <p>
             <strong>P<sub>rot</sub></strong> is the rotation period in the longitude system chosen
@@ -959,13 +1206,16 @@ const rows = computed((): ReadoutRow[] =>
           </p>
           <p>
             <strong>λ</strong> is planetocentric longitude around {{ planetSystem?.name }}. The
-            orrery uses the plane chosen above: ecliptic (Earth perihelion at the top, matching the
-            solar system) or {{ planetSystem?.name }}’s equator (moons run evenly; the Sun’s azimuth
-            is seasonal). The table’s λ column stays ecliptic. <strong>ν</strong> is the true
-            anomaly from {{ planetSystem?.periapsisName }}.
+            ecliptic view looks down from ecliptic north, with Earth perihelion up; inclined orbits
+            are foreshortened and can pass close to the focus. {{ planetSystem?.name }}’s equator is
+            the face-on view where moons run evenly and the Sun’s azimuth is seasonal. Edge rotates
+            the ecliptic camera 90°, with ecliptic north vertical. The table’s λ stays ecliptic, and
+            r remains the full three-dimensional distance, so r need not match screen radius.
+            <strong>ν</strong> is the true anomaly from {{ planetSystem?.periapsisName }}.
           </p>
           <p>
             <strong>i</strong> is inclination to {{ planetSystem?.orbitPlaneName }}.
+            <strong>r</strong> is the current distance from {{ planetSystem?.name }}.
             <strong>a</strong>, <strong>q</strong>, and <strong>Q</strong> are mean,
             {{ planetSystem?.periapsisName }}, and {{ planetSystem?.apoapsisName }} distances in km
             and {{ planetSystem?.name }} radii.
@@ -1000,6 +1250,17 @@ const rows = computed((): ReadoutRow[] =>
             wandered a few degrees.
           </p>
         </template>
+      </template>
+      <template v-if="!isSatelliteSystem" #head-r>
+        <button
+          type="button"
+          class="th-toggle"
+          :aria-label="distanceUnitAria"
+          @click="toggleDistanceUnit"
+        >
+          <span class="th-sym">r</span>
+          <span class="th-mode">{{ distanceUnit }}</span>
+        </button>
       </template>
       <template #head-rotation>
         <button
@@ -1166,8 +1427,6 @@ const rows = computed((): ReadoutRow[] =>
   height: auto;
   display: block;
 
-  // The Sun is the frame of reference, not a selectable body, so it neither
-  // offers a pointer nor dims behind a selection.
   g.satellite-group {
     cursor: pointer;
 
@@ -1186,6 +1445,16 @@ const rows = computed((): ReadoutRow[] =>
     }
   }
 }
+
+.orbit-far .orbit {
+  opacity: 0.65;
+}
+
+// .edge-stem {
+//   stroke: color-mix(in srgb, var(--text-dim) 40%, transparent);
+//   stroke-width: 0.2;
+//   pointer-events: none;
+// }
 
 .orbit {
   fill: none;

@@ -42,6 +42,8 @@ export type PlanetState = {
   trueAnomaly: number
   /** Longitude of perihelion ϖ, radians. */
   perihelionLongitude: number
+  /** Longitude of the ascending node Ω, radians, in the same frame as `inclination`. */
+  nodeLongitude: number
   /** Heliocentric ecliptic longitude λ ≈ ϖ + ν, radians (inclination ignored). */
   longitude: number
   /** λ minus Earth's perihelion longitude; 0 at Earth's perihelion direction. */
@@ -259,6 +261,175 @@ export function orbitPoint(
     x: cx - radius * Math.sin(offsetFromEarthPerihelion),
     y: cy - radius * Math.cos(offsetFromEarthPerihelion),
   }
+}
+
+export type EdgeOnPoint = {
+  x: number
+  y: number
+  /** Camera-axis coordinate used to split and sort the projected orbit. */
+  depth: number
+}
+
+/**
+ * Ecliptic top-down: an orthographic camera looking from ecliptic north, with
+ * Earth perihelion up and the same left–right axis as `orbitPoint`. Depth is
+ * height above the ecliptic, so a body below the plane is far.
+ *
+ * The camera compresses the full three-dimensional distance and then projects,
+ * exactly as `projectEdgeOn` does, so the two views are one scaled model seen
+ * from two directions rather than two different models: they share screen X,
+ * and both are bounded by `scale`. An inclined orbit still foreshortens,
+ * because only the in-plane part of the direction survives — the Uranian moons
+ * ride an orbit tipped almost onto the ecliptic pole and draw as slivers rather
+ * than as rings at their semi-major axis.
+ */
+export function projectEclipticTopDown(
+  cx: number,
+  cy: number,
+  position: Vec3,
+  earthPerihelionLongitude: number,
+  scale: (distance: number) => number,
+): EdgeOnPoint {
+  const cosP = Math.cos(earthPerihelionLongitude)
+  const sinP = Math.sin(earthPerihelionLongitude)
+  const along = position.x * sinP - position.y * cosP
+  const up = position.x * cosP + position.y * sinP
+  const distance = Math.hypot(position.x, position.y, position.z)
+  if (distance < 1e-12) return { x: cx, y: cy, depth: position.z }
+  const radius = scale(distance)
+  return {
+    x: cx + radius * (along / distance),
+    y: cy - radius * (up / distance),
+    depth: position.z,
+  }
+}
+
+/**
+ * Edge-on ecliptic: the current orrery tilted 90° about its left–right axis.
+ * Screen X is unchanged; screen Y is ecliptic north; depth is the old “up”
+ * (Earth perihelion) axis, so bodies that sat at the top of the diagram are far.
+ *
+ * The compressed radius is taken along the full three-dimensional distance and
+ * then projected, as an orthographic camera would, which bounds the drawing by
+ * `scale`. Compressing the in-plane distance instead would divide by a
+ * vanishing ρ wherever an orbit passes over the ecliptic pole — the Uranian
+ * moons do, twice a revolution — and throw the trace out of the frame.
+ */
+export function projectEdgeOn(
+  cx: number,
+  cy: number,
+  position: Vec3,
+  earthPerihelionLongitude: number,
+  scale: (distance: number) => number,
+): EdgeOnPoint {
+  const cosP = Math.cos(earthPerihelionLongitude)
+  const sinP = Math.sin(earthPerihelionLongitude)
+  const along = position.x * sinP - position.y * cosP
+  const depth = position.x * cosP + position.y * sinP
+  const distance = Math.hypot(position.x, position.y, position.z)
+  if (distance < 1e-12) return { x: cx, y: cy, depth }
+  const radius = scale(distance)
+  return {
+    x: cx + radius * (along / distance),
+    y: cy - radius * (position.z / distance),
+    depth,
+  }
+}
+
+export function eccentricAnomalyFromTrue(nu: number, e: number): number {
+  return 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2))
+}
+
+/** Sample a Keplerian ellipse in ecliptic (or Laplace) rectangular coordinates. */
+export function keplerOrbitPositions(
+  a: number,
+  e: number,
+  i: number,
+  Omega: number,
+  varpi: number,
+  samples = 96,
+): Vec3[] {
+  return Array.from({ length: samples }, (_, index) => {
+    const nu = (index / samples) * Math.PI * 2
+    const E = eccentricAnomalyFromTrue(nu, e)
+    return heliocentricEcliptic(a, e, E, i, Omega, varpi)
+  })
+}
+
+/** Planetocentric ecliptic samples of a moon’s mean ellipse at `date`. */
+export function satelliteRelativeOrbitPositions(id: SatelliteId, date: Date, samples = 96): Vec3[] {
+  const satellite = MOONS.find((moon) => moon.id === id)
+  if (!satellite) throw new Error(`Unknown satellite ${id}`)
+  const days = centuriesSinceJ2000(date) * 36525
+  const { a, e, i, Omega, varpi } = evaluateSatellite(satellite, days)
+  return keplerOrbitPositions(a, e, i, Omega, varpi, samples).map((inLaplace) =>
+    laplaceToEcliptic(inLaplace, satellite.elements.laplaceRa, satellite.elements.laplaceDec),
+  )
+}
+
+function interpolateDepthZero(a: EdgeOnPoint, b: EdgeOnPoint): EdgeOnPoint {
+  const t = a.depth / (a.depth - b.depth)
+  return {
+    x: a.x + t * (b.x - a.x),
+    y: a.y + t * (b.y - a.y),
+    depth: 0,
+  }
+}
+
+function pointsToPath(points: EdgeOnPoint[]): string {
+  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+}
+
+/**
+ * Split a closed projected orbit into far and near polylines. Edge-on uses a
+ * positive far axis; top-down uses negative z as the far side.
+ */
+export function splitClosedByDepth(
+  points: EdgeOnPoint[],
+  farSide: 'positive' | 'negative' = 'positive',
+): { far: string[]; near: string[] } {
+  const far: string[] = []
+  const near: string[] = []
+  const n = points.length
+  if (n < 2) return { far, near }
+  const isFar = (depth: number) => (farSide === 'positive' ? depth >= 0 : depth < 0)
+
+  type Segment = { far: boolean; points: EdgeOnPoint[] }
+  const segments: Segment[] = []
+  let buffer: EdgeOnPoint[] = [points[0]]
+
+  for (let i = 0; i < n; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % n]
+    const aFar = isFar(a.depth)
+    const bFar = isFar(b.depth)
+    if (aFar === bFar) {
+      buffer.push(b)
+      continue
+    }
+    const zero = interpolateDepthZero(a, b)
+    buffer.push(zero)
+    if (buffer.length >= 2) segments.push({ far: aFar, points: buffer })
+    buffer = [zero, b]
+  }
+
+  if (segments.length === 0) {
+    if (buffer.length >= 2) segments.push({ far: isFar(points[0].depth), points: buffer })
+  } else {
+    const first = segments[0]
+    if (first.far === isFar(points[0].depth)) {
+      first.points = buffer.concat(first.points.slice(1))
+    } else if (buffer.length >= 2) {
+      segments.push({ far: isFar(points[n - 1].depth), points: buffer })
+    }
+  }
+
+  for (const segment of segments) {
+    const path = pointsToPath(segment.points)
+    if (segment.far) far.push(path)
+    else near.push(path)
+  }
+  return { far, near }
 }
 
 /**
@@ -487,6 +658,7 @@ function planetState(
     meanAnomaly: wrapRad(meanAnomaly),
     trueAnomaly: wrapRad(nu),
     perihelionLongitude: wrapRad(varpi),
+    nodeLongitude: wrapRad(Omega),
     longitude,
     offsetFromEarthPerihelion: wrapRad(longitude - earthVarpi),
     rotation: { ...planet.rotation, r: spinRate },
@@ -830,6 +1002,7 @@ function satelliteState(
     meanAnomaly: wrapRad(meanAnomaly),
     trueAnomaly: wrapRad(nu),
     perihelionLongitude,
+    nodeLongitude: wrapRad(Omega),
     longitude,
     offsetFromEarthPerihelion: wrapRad(longitude - earthVarpi),
     rotation: { r: spinRate, theta: radToDeg(theta), phi: radToDeg(phi) },

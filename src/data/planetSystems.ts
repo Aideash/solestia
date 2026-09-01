@@ -3,8 +3,16 @@ import type { PlanetId } from './planets.ts'
 
 export type PlanetSystemId = 'earth' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
 
-export const VIEW_PLANE_CHOICES = ['ecliptic', 'equator'] as const
+export const VIEW_PLANE_CHOICES = ['ecliptic', 'equator', 'edge'] as const
 export type ViewPlane = (typeof VIEW_PLANE_CHOICES)[number]
+
+/** Solar-system and asteroid orreries have no parent equator to look down. */
+export const HELIOCENTRIC_VIEW_PLANE_CHOICES: readonly ViewPlane[] = ['ecliptic', 'edge']
+
+export function cycleViewPlane(current: ViewPlane, choices: readonly ViewPlane[]): ViewPlane {
+  const i = choices.indexOf(current)
+  return choices[(i < 0 ? 0 : i + 1) % choices.length]
+}
 
 export type PlanetSystem = {
   id: PlanetSystemId

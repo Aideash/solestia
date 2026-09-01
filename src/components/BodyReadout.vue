@@ -555,7 +555,7 @@ tbody tr {
 }
 
 .readout__navigation-name {
-  margin-right: 0.55rem;
+  margin-right: 1.25rem;
   color: $color-text;
   font-weight: 600;
 }

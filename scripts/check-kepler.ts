@@ -26,9 +26,19 @@ import {
   satelliteIauFrame,
   solarSystemAt,
   julianDate,
+  keplerOrbitPositions,
+  orbitPoint,
+  projectEdgeOn,
+  projectEclipticTopDown,
+  satelliteRelativeOrbitPositions,
+  splitClosedByDepth,
   wrapRadSigned,
 } from '../src/lib/kepler.ts'
-import { asteroidBeltAt, asteroidPositionAtJulianDate } from '../src/lib/asteroidEphemeris.ts'
+import {
+  asteroidBeltAt,
+  asteroidOrbitPositions,
+  asteroidPositionAtJulianDate,
+} from '../src/lib/asteroidEphemeris.ts'
 import { resolveOrbitalBands, resolveSolarOrbitalBands } from '../src/lib/orbitalBands.ts'
 import { radialScale, solarOrbitOuterR } from '../src/lib/radialScale.ts'
 
@@ -41,6 +51,9 @@ function assert(condition: unknown, message: string): asserts condition {
 function deg(rad: number): number {
   return (rad * 180) / Math.PI
 }
+
+const MS_PER_DAY = 86_400_000
+const UNIX_EPOCH_JD = 2440587.5
 
 const perihelion = solarSystemAt(new Date('2026-01-03T12:00:00Z'))
 const aphelion = solarSystemAt(new Date('2026-07-04T12:00:00Z'))
@@ -770,7 +783,51 @@ for (const asteroid of ASTEROIDS) {
       actual.z - holdout.position[2],
     )
     worstAsteroidHoldoutError = Math.max(worstAsteroidHoldoutError, error)
-    assert(error < 0.02, `${asteroid.name} holdout position error is ${error} AU`)
+    assert(error < 1e-3, `${asteroid.name} holdout position error is ${error} AU`)
+  }
+}
+
+/**
+ * The drawn orbit comes from the osculating elements of the interpolated state,
+ * so it is only as steady as the reconstructed velocity. A cubic Hermite over
+ * half-year knots swept the perihelion direction through degrees and snapped it
+ * back at every knot, which read as an orbit wobbling week to week. Real
+ * apsidal precession out here is well under a degree per year, so anything that
+ * moves this fast is the interpolation talking.
+ */
+let worstDrawnWobble = 0
+let worstApsidalWobble = 0
+for (let knot = 2; knot < ASTEROID_EPHEMERIS_SAMPLE_COUNT - 3; knot += 60) {
+  const startJd = ASTEROID_EPHEMERIS_START_JD + knot * ASTEROID_EPHEMERIS_STEP_DAYS
+  const aphelia = new Map<string, number[]>()
+  const apsides = new Map<string, number[]>()
+  for (let day = 0; day <= ASTEROID_EPHEMERIS_STEP_DAYS; day += 15) {
+    const date = new Date((startJd + day - UNIX_EPOCH_JD) * MS_PER_DAY)
+    for (const state of asteroidBeltAt(date).asteroids) {
+      const reach = asteroidOrbitPositions(state.id, date).map((position) =>
+        Math.hypot(position.x, position.y, position.z),
+      )
+      aphelia.set(state.id, [...(aphelia.get(state.id) ?? []), Math.max(...reach)])
+      apsides.set(state.id, [...(apsides.get(state.id) ?? []), deg(state.perihelionLongitude)])
+    }
+  }
+  for (const asteroid of ASTEROIDS) {
+    const drawn = aphelia.get(asteroid.id) ?? []
+    const drawnWobble = Math.max(...drawn) - Math.min(...drawn)
+    assert(
+      drawnWobble < 0.05,
+      `${asteroid.name}'s drawn orbit should hold its shape across a knot interval, aphelion swung ${drawnWobble.toFixed(3)} AU`,
+    )
+    worstDrawnWobble = Math.max(worstDrawnWobble, drawnWobble)
+
+    // Ill-conditioned wherever e is small, so this is the looser of the two.
+    const apsidal = apsides.get(asteroid.id) ?? []
+    const apsidalWobble = Math.max(...apsidal) - Math.min(...apsidal)
+    assert(
+      apsidalWobble < 2,
+      `${asteroid.name}'s perihelion direction should hold steady across a knot interval, swung ${apsidalWobble.toFixed(2)}°`,
+    )
+    worstApsidalWobble = Math.max(worstApsidalWobble, apsidalWobble)
   }
 }
 
@@ -831,7 +888,7 @@ for (const asteroid of [hygiea, interamnia]) {
 }
 
 console.log(
-  `ok  asteroid ephemerides and rotation cover 1800–2050; seven unique bodies, worst stored holdout ${worstAsteroidHoldoutError.toExponential(2)} AU`,
+  `ok  asteroid ephemerides and rotation cover 1800–2050; seven unique bodies, worst stored holdout ${worstAsteroidHoldoutError.toExponential(2)} AU; drawn orbits hold to ${worstDrawnWobble.toFixed(3)} AU and ${worstApsidalWobble.toFixed(2)}° across a knot interval`,
 )
 
 const geometryEpoch = new Date('2026-01-01T00:00:00Z')
@@ -990,4 +1047,201 @@ assert(
 
 console.log(
   `ok  orrery radial scale rises with distance in every system, tightest orbit gap ${tightestGap.toFixed(2)} of ${OUTER_RING} units; Nereid’s perineptune draws at ${nereidPeriapsis.toFixed(1)} against Triton at ${tritonApoapsis.toFixed(1)}`,
+)
+
+const identityScale = (rho: number) => rho
+const earthEdge = projectEdgeOn(
+  50,
+  50,
+  earthPeri.position,
+  perihelion.earthPerihelionLongitude,
+  identityScale,
+)
+assert(
+  Math.abs(earthEdge.y - 50) < 0.05,
+  `Earth at perihelion should sit on the ecliptic in edge-on view, y=${earthEdge.y.toFixed(4)}`,
+)
+assert(
+  earthEdge.depth > 0,
+  `Earth at perihelion should be on the far side of an edge-on view, depth=${earthEdge.depth}`,
+)
+
+const planar = keplerOrbitPositions(1, 0, 0, 0, 0)
+const planarProjected = planar.map((position) => projectEdgeOn(50, 50, position, 0, identityScale))
+for (const point of planarProjected) {
+  assert(
+    Math.abs(point.y - 50) < 1e-9,
+    `A zero-inclination orbit should project onto the ecliptic, y=${point.y}`,
+  )
+}
+const { far, near } = splitClosedByDepth(planarProjected)
+assert(
+  far.length >= 1 && near.length >= 1,
+  'A closed in-plane orbit should split into far and near halves',
+)
+
+const planarOrigin = 0.37
+for (const position of keplerOrbitPositions(1, 0.2, 0, 0, 0.81)) {
+  const projected = projectEclipticTopDown(50, 50, position, planarOrigin, identityScale)
+  const rho = Math.hypot(position.x, position.y)
+  const offset = Math.atan2(position.y, position.x) - planarOrigin
+  const expected = orbitPoint(50, 50, rho, offset)
+  assert(
+    Math.hypot(projected.x - expected.x, projected.y - expected.y) < 1e-9,
+    `A planar top-down orbit should match orbitPoint, got (${projected.x}, ${projected.y}) against (${expected.x}, ${expected.y})`,
+  )
+}
+
+/**
+ * The two cameras are one scaled model turned 90° about the screen's horizontal
+ * axis, so they have to agree on screen X. Scaling the in-plane distance in one
+ * view and the three-dimensional distance in the other broke that: the ecliptic
+ * view squeezed the Uranian moons into their parent's disc while the edge view
+ * kept them outside it.
+ */
+const tiltedOrbit = keplerOrbitPositions(1.4, 0.3, 1.2, 0.9, 2.1)
+for (const position of tiltedOrbit) {
+  const topDown = projectEclipticTopDown(50, 50, position, planarOrigin, identityScale)
+  const edgeOn = projectEdgeOn(50, 50, position, planarOrigin, identityScale)
+  assert(
+    Math.abs(topDown.x - edgeOn.x) < 1e-9,
+    `The ecliptic and edge cameras should share screen X, got ${topDown.x} against ${edgeOn.x}`,
+  )
+  assert(
+    Math.abs(topDown.depth - position.z) < 1e-12,
+    `Ecliptic top-down depth should be height above the ecliptic, got ${topDown.depth} against ${position.z}`,
+  )
+}
+
+/**
+ * The Uranian moons ride an equator tipped almost into the ecliptic, so each
+ * orbit passes over the ecliptic pole twice a revolution. That is where the
+ * in-plane distance vanishes, and a projection that compressed it drew four
+ * lobes running out of the frame instead of a near-vertical ellipse.
+ */
+const uranusEdge = planetSystemAt(geometryEpoch, 'uranus')
+const uranusEdgeScale = radialScale(uranusEdge.satellites, INNER_RING, OUTER_RING)
+let uranusEdgeReach = 0
+let uranusTopDownMinorRatio = 1
+for (const moon of uranusEdge.satellites) {
+  let topDownMinReach = Number.POSITIVE_INFINITY
+  let topDownMaxReach = 0
+  const topDownVectors: { x: number; y: number }[] = []
+  for (const position of satelliteRelativeOrbitPositions(moon.id, geometryEpoch)) {
+    const point = projectEdgeOn(
+      50,
+      50,
+      position,
+      uranusEdge.earthPerihelionLongitude,
+      uranusEdgeScale,
+    )
+    const reach = Math.hypot(point.x - 50, point.y - 50)
+    assert(
+      reach <= OUTER_RING + 1e-9,
+      `${moon.name}'s edge-on orbit should stay inside the frame, reached ${reach.toFixed(2)} of ${OUTER_RING}`,
+    )
+    uranusEdgeReach = Math.max(uranusEdgeReach, reach)
+
+    const topDown = projectEclipticTopDown(
+      50,
+      50,
+      position,
+      uranusEdge.earthPerihelionLongitude,
+      uranusEdgeScale,
+    )
+    const topDownReach = Math.hypot(topDown.x - 50, topDown.y - 50)
+    topDownVectors.push({ x: topDown.x - 50, y: topDown.y - 50 })
+    assert(
+      topDownReach <= OUTER_RING + 1e-9,
+      `${moon.name}'s ecliptic top-down orbit should stay inside the frame, reached ${topDownReach.toFixed(2)} of ${OUTER_RING}`,
+    )
+    topDownMinReach = Math.min(topDownMinReach, topDownReach)
+    topDownMaxReach = Math.max(topDownMaxReach, topDownReach)
+  }
+  const minorRatio = topDownMinReach / topDownMaxReach
+  assert(
+    minorRatio < 0.3,
+    `${moon.name}'s ecliptic top-down orbit should be a sliver, minimum reach was ${(minorRatio * 100).toFixed(1)}% of maximum`,
+  )
+  uranusTopDownMinorRatio = Math.min(uranusTopDownMinorRatio, minorRatio)
+  const major = topDownVectors.reduce((widest, point) =>
+    Math.hypot(point.x, point.y) > Math.hypot(widest.x, widest.y) ? point : widest,
+  )
+  const majorLength = Math.hypot(major.x, major.y)
+  const minorReach = Math.max(
+    ...topDownVectors.map((point) =>
+      Math.abs((-major.y * point.x + major.x * point.y) / majorLength),
+    ),
+  )
+  assert(
+    minorReach < uranusEdgeScale(moon.a) * 0.3,
+    `${moon.name}'s maximum minor-axis reach should be much smaller than scale(a), got ${minorReach.toFixed(2)} against ${uranusEdgeScale(moon.a).toFixed(2)}`,
+  )
+}
+
+const belt = asteroidBeltAt(new Date('2026-08-31T12:00:00Z'))
+const ceres = belt.asteroids.find((asteroid) => asteroid.id === 'ceres')
+const pallas = belt.asteroids.find((asteroid) => asteroid.id === 'pallas')
+assert(ceres && pallas, 'Ceres and Pallas missing from belt snapshot')
+const ceresPeak = Math.max(
+  ...asteroidOrbitPositions('ceres', belt.at).map((position) => Math.abs(position.z)),
+)
+const pallasPeak = Math.max(
+  ...asteroidOrbitPositions('pallas', belt.at).map((position) => Math.abs(position.z)),
+)
+assert(
+  pallasPeak > ceresPeak * 1.5,
+  `Pallas’s orbit should rise farther from the ecliptic than Ceres, ${pallasPeak.toFixed(3)} vs ${ceresPeak.toFixed(3)} AU`,
+)
+assert(belt.jupiterPosition, 'Belt snapshot should carry Jupiter’s ecliptic position')
+
+/**
+ * The belt draws on a plain proportional scale rather than the orrery's
+ * compressed one. Seven semi-major axes inside 2.4–3.2 AU give the compressed
+ * scale almost no spacing between its pins, and the extrapolation past the last
+ * one then shrank every object to a third of its radius.
+ */
+const beltOuterAu = Math.max(...belt.asteroids.map((asteroid) => asteroid.a * (1 + asteroid.e)))
+const beltScale = (distance: number) => (distance * OUTER_RING) / beltOuterAu
+const beltAspects = new Map<string, number>()
+for (const asteroid of belt.asteroids) {
+  const lane = beltScale(asteroid.a)
+  assert(
+    lane > OUTER_RING * 0.4,
+    `${asteroid.name}'s belt circle should sit out in the annulus, got ${lane.toFixed(2)} of ${OUTER_RING}`,
+  )
+
+  const projected = asteroidOrbitPositions(asteroid.id, belt.at).map((position) =>
+    projectEclipticTopDown(50, 50, position, belt.earthPerihelionLongitude, beltScale),
+  )
+  let widest = { x: 0, y: 0 }
+  for (const point of projected) {
+    const offset = { x: point.x - 50, y: point.y - 50 }
+    assert(
+      Math.hypot(offset.x, offset.y) <= OUTER_RING + 1e-9,
+      `${asteroid.name}'s belt orbit should stay inside the frame, reached ${Math.hypot(offset.x, offset.y).toFixed(2)}`,
+    )
+    if (Math.hypot(offset.x, offset.y) > Math.hypot(widest.x, widest.y)) widest = offset
+  }
+  const majorLength = Math.hypot(widest.x, widest.y)
+  const minor = Math.max(
+    ...projected.map((point) =>
+      Math.abs((-widest.y * (point.x - 50) + widest.x * (point.y - 50)) / majorLength),
+    ),
+  )
+  beltAspects.set(asteroid.id, minor / majorLength)
+}
+
+const ceresAspect = beltAspects.get('ceres') ?? 0
+const pallasAspect = beltAspects.get('pallas') ?? 0
+assert(
+  ceresAspect > 0.9,
+  `Ceres is barely inclined, so its top-down orbit should stay nearly round, got aspect ${ceresAspect.toFixed(3)}`,
+)
+assert(
+  pallasAspect < ceresAspect - 0.05 && pallasAspect > 0.5,
+  `Pallas’s 35° tilt should foreshorten its top-down orbit without flattening it, got aspect ${pallasAspect.toFixed(3)} against Ceres ${ceresAspect.toFixed(3)}`,
+)
+console.log(
+  `ok  orthographic ecliptic projection: cameras share screen X; Uranian moon minor reach ${(uranusTopDownMinorRatio * 100).toFixed(1)}% of maximum; edge reach ${uranusEdgeReach.toFixed(1)} of ${OUTER_RING}; belt aspect Pallas ${pallasAspect.toFixed(2)} against Ceres ${ceresAspect.toFixed(2)}`,
 )

@@ -6,8 +6,14 @@ const HORIZONS_URL = 'https://ssd.jpl.nasa.gov/api/horizons.api'
 const START_TIME = '1800-01-01'
 const HOLDOUT_START_TIME = '1800-04-01'
 const STOP_TIME = '2052-01-01'
-/** Half-year knots: Hermite stays C1, Pallas longitude error stays ~0.1°. */
+/**
+ * Half-year knots. The quintic Hermite the app reconstructs with also matches
+ * the two-body acceleration at each end, which holds Pallas — the worst case —
+ * inside a thousandth of a degree of longitude at this spacing.
+ */
 const STEP_DAYS = 180
+/** Gaussian gravitational constant squared, AU³/day². */
+const SOLAR_MU = 0.0002959122082855911
 const OUTPUT = resolve('src/data/generated/asteroidEphemerides.ts')
 
 type State = {
@@ -81,19 +87,46 @@ async function fetchStates(number: number, name: string, start: string): Promise
   return parseStates(payload.result, `${number} ${name}`)
 }
 
+function solarAcceleration(x: number, y: number, z: number): readonly [number, number, number] {
+  const r = Math.hypot(x, y, z)
+  const pull = -SOLAR_MU / (r * r * r)
+  return [pull * x, pull * y, pull * z]
+}
+
+/** Must match `asteroidStateVectorAtJulianDate`, or the reported error is fiction. */
 function hermite(a: State, b: State, jd: number): readonly [number, number, number] {
   const span = b.jd - a.jd
   const t = (jd - a.jd) / span
   const t2 = t * t
   const t3 = t2 * t
-  const h00 = 2 * t3 - 3 * t2 + 1
-  const h10 = t3 - 2 * t2 + t
-  const h01 = -2 * t3 + 3 * t2
-  const h11 = t3 - t2
+  const t4 = t3 * t
+  const t5 = t4 * t
+  const h0 = 1 - 10 * t3 + 15 * t4 - 6 * t5
+  const h1 = t - 6 * t3 + 8 * t4 - 3 * t5
+  const h2 = 0.5 * t2 - 1.5 * t3 + 1.5 * t4 - 0.5 * t5
+  const h3 = 10 * t3 - 15 * t4 + 6 * t5
+  const h4 = -4 * t3 + 7 * t4 - 3 * t5
+  const h5 = 0.5 * t3 - t4 + 0.5 * t5
+  const accelA = solarAcceleration(a.x, a.y, a.z)
+  const accelB = solarAcceleration(b.x, b.y, b.z)
+  const axis = (
+    pA: number,
+    vA: number,
+    accA: number,
+    pB: number,
+    vB: number,
+    accB: number,
+  ): number =>
+    h0 * pA +
+    h1 * span * vA +
+    h2 * span * span * accA +
+    h3 * pB +
+    h4 * span * vB +
+    h5 * span * span * accB
   return [
-    h00 * a.x + h10 * span * a.vx + h01 * b.x + h11 * span * b.vx,
-    h00 * a.y + h10 * span * a.vy + h01 * b.y + h11 * span * b.vy,
-    h00 * a.z + h10 * span * a.vz + h01 * b.z + h11 * span * b.vz,
+    axis(a.x, a.vx, accelA[0], b.x, b.vx, accelB[0]),
+    axis(a.y, a.vy, accelA[1], b.y, b.vy, accelB[1]),
+    axis(a.z, a.vz, accelA[2], b.z, b.vz, accelB[2]),
   ]
 }
 
