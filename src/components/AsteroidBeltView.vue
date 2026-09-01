@@ -831,7 +831,6 @@ svg {
 }
 
 .jupiter-mark text,
-.sun text,
 .asteroid text {
   dominant-baseline: middle;
 }
@@ -843,9 +842,11 @@ svg {
 }
 
 .sun text {
-  fill: $color-accent;
-  font-size: 3.3px;
+  fill: $color-text;
+  font-size: 4.5px;
+  dominant-baseline: central;
   text-anchor: middle;
+  pointer-events: none;
 }
 
 .sun__facing {
@@ -921,7 +922,7 @@ svg:has(g.selected) {
  * fighting it. Both rules follow the bases they override.
  */
 .facing--near {
-  stroke: color-mix(in srgb, var(--facing-stroke) 45%, black);
+  stroke: color-mix(in srgb, var(--facing-stroke) 45%, white);
 }
 
 .facing--far {

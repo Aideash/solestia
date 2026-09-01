@@ -43,6 +43,13 @@ const frameR = 46
 const orbitR = 42
 const bodyR = 1.55
 const sunR = 3.3
+const facingGap = 0.2
+const facingMin = 0.35
+const facingMax = 1.2
+/** The same whisker for the Sun, scaled to its larger disc. */
+const sunFacingGap = 0.35
+const sunFacingMin = 0.6
+const sunFacingMax = 1.6
 const viewBox = '-6 -6 112 112'
 /**
  * orbitRadius is the semi-major axis on screen, not the aphelion distance: the
@@ -63,15 +70,19 @@ function whiskerFor(
   facing: Facing,
   origin: number,
   radius: number,
+  gap = facingGap,
+  min = facingMin,
+  max = facingMax,
 ): ViewWhisker | null {
   if (useEdge.value) {
-    const edge = edgeOnWhisker(center, radius, facing, origin, 0.35, 1.2)
+    const edge = edgeOnWhisker(center, radius, facing, origin, min, max)
     return edge && { from: edge.from, to: edge.to, variant: edge.far ? 'far' : 'near' }
   }
   const offset = facing.longitude - origin
+  const reach = radius + gap
   return {
-    from: orbitPoint(center.x, center.y, radius + 0.2, offset),
-    to: orbitPoint(center.x, center.y, radius + 0.55 + 0.85 * facing.inPlane, offset),
+    from: orbitPoint(center.x, center.y, reach, offset),
+    to: orbitPoint(center.x, center.y, reach + min + (max - min) * facing.inPlane, offset),
     variant: 'flat',
   }
 }
@@ -174,6 +185,23 @@ const sednaInset = computed(() => {
 })
 
 /**
+ * Where the Carrington prime meridian points. The Sun's axis is tilted only 7°
+ * from ecliptic north, so edge-on this whisker stays close to the horizontal
+ * while it sweeps in and out across the disc.
+ */
+const sunFacing = computed(() =>
+  whiskerFor(
+    { x: cx, y: cy },
+    props.snapshot.sun.facing,
+    props.snapshot.earthPerihelionLongitude,
+    sunR,
+    sunFacingGap,
+    sunFacingMin,
+    sunFacingMax,
+  ),
+)
+
+/**
  * Neptune sits at the inner edge of the belt rather than out at the frame: at
  * 30 AU it is inside or crossing every orbit here, so a marker on the rim would
  * put the body that shapes these orbits outside all of them.
@@ -195,7 +223,8 @@ const projectedNeptune = computed(() => {
     x: cx + (dx / length) * radius,
     y: cy + (dy / length) * radius,
   })
-  return { inner: at(sunR + 1.4), edge: at(ring - 2.6), label: at(ring) }
+  /* The inner end clears the Sun's whisker, which reaches sunR + 1.95 at most. */
+  return { inner: at(sunR + 2.2), edge: at(ring - 2.6), label: at(ring) }
 })
 
 type RotationKind = 'sidereal' | 'solar'
@@ -274,7 +303,9 @@ const rows = computed((): ReadoutRow[] =>
           Nine bodies share one proportional scale, with Sedna clipped to the frame so it appears
           only while its distance fits. A labeled inset carries Sedna’s whole orbit at its own
           scale. Neptune’s symbol marks its current direction, drawn at the belt’s 30 AU inner edge
-          because it orbits inside every body shown here.
+          because it orbits inside every body shown here. The whisker on the Sun points where its
+          Carrington prime meridian faces; edge-on it stands on the surface, painting across the
+          disc while the meridian faces the camera and hidden behind it while it faces away.
         </desc>
         <defs>
           <clipPath id="kuiper-frame">
@@ -313,7 +344,28 @@ const rows = computed((): ReadoutRow[] =>
         </g>
 
         <g class="sun" @dblclick="emit('select', 'sun')">
+          <title>
+            Sun — Carrington prime meridian faces
+            {{ formatDeg(snapshot.sun.facing.longitude) }} ecliptic longitude
+          </title>
+          <line
+            v-if="sunFacing?.variant === 'far'"
+            class="sun__facing facing--far"
+            :x1="sunFacing.from.x"
+            :y1="sunFacing.from.y"
+            :x2="sunFacing.to.x"
+            :y2="sunFacing.to.y"
+          />
           <circle :cx="cx" :cy="cy" :r="sunR" />
+          <line
+            v-if="sunFacing && sunFacing.variant !== 'far'"
+            class="sun__facing"
+            :class="{ 'facing--near': sunFacing.variant === 'near' }"
+            :x1="sunFacing.from.x"
+            :y1="sunFacing.from.y"
+            :x2="sunFacing.to.x"
+            :y2="sunFacing.to.y"
+          />
           <text :x="cx" :y="cy">☉</text>
         </g>
 
@@ -546,7 +598,9 @@ const rows = computed((): ReadoutRow[] =>
           Positions interpolate JPL Horizons vectors. Pluto uses the IAU cartographic frame. For the
           other bodies, rotation periods are measured but the clocks use an explicitly assumed
           prograde orbit-normal pole and arbitrary J2000 phase because no standard prime meridian
-          exists.
+          exists. The whisker on the Sun points where the Carrington prime meridian faces, on a
+          25.38-day rate that is a convention rather than a rigid period, since the photosphere
+          spins faster at the equator than near the poles.
         </p>
       </template>
     </BodyReadout>
@@ -607,8 +661,8 @@ svg {
 }
 
 .sun circle {
-  fill: var(--background);
-  stroke: $color-text;
+  fill: color-mix(in srgb, var(--accent) 28%, var(--bg-raised));
+  stroke: var(--accent);
   stroke-width: 0.45;
 }
 
@@ -623,6 +677,14 @@ svg {
 .sun text {
   fill: $color-text;
   font-size: 4.5px;
+}
+
+.sun__facing {
+  stroke: var(--accent);
+  stroke-width: 0.32;
+  stroke-linecap: round;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
 .neptune-mark {
@@ -675,6 +737,14 @@ svg {
 .facing--far {
   stroke-dasharray: 0.5 0.55;
   opacity: 0.65;
+}
+
+/**
+ * Edge-on a whisker stands on the body's surface, so it paints across the disc
+ * while the meridian faces the camera. Darkened to read against the fill.
+ */
+.sun__facing.facing--near {
+  stroke: color-mix(in srgb, var(--accent) 45%, white);
 }
 
 .sedna-inset {
