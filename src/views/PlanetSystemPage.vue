@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, inject, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import PlanetClock from '../components/PlanetClock.vue'
 import SolarSystemView from '../components/SolarSystemView.vue'
 import SystemStage from '../components/SystemStage.vue'
@@ -72,6 +73,9 @@ function toggleSatellite(id: string) {
       />
     </template>
     <template #controls>
+      <RouterLink v-if="systemId === 'earth'" class="forward" :to="{ name: 'earth-time' }">
+        Date and time →
+      </RouterLink>
       <button
         type="button"
         class="frame-toggle"
@@ -130,7 +134,8 @@ function toggleSatellite(id: string) {
   font-size: 0.8125rem;
 }
 
-.back {
+.back,
+.forward {
   display: block;
   margin-top: 0.5rem;
   color: var(--accent);
@@ -143,7 +148,9 @@ function toggleSatellite(id: string) {
 }
 
 .back:hover,
-.back:focus-visible {
+.back:focus-visible,
+.forward:hover,
+.forward:focus-visible {
   color: var(--text);
   outline: none;
 }

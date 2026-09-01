@@ -26,6 +26,12 @@ export const router = createRouter({
       meta: { subtitle: 'Earth' },
     },
     {
+      path: '/earth/time',
+      name: 'earth-time',
+      component: () => import('./views/EarthTimePage.vue'),
+      meta: { subtitle: 'Earth · time' },
+    },
+    {
       path: '/jupiter',
       name: 'jupiter-system',
       component: PlanetSystemPage,

@@ -63,6 +63,11 @@ function onAppKeydown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
+  if (route.name === 'earth-time') {
+    void router.push({ name: 'earth-system' })
+    event.preventDefault()
+    return
+  }
   if (isDetailView.value) {
     void router.push({ name: 'solar' })
     event.preventDefault()
