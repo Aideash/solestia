@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
 import { epochKey } from '../epoch.ts'
-import { gregorianCalendar } from '../lib/calendars.ts'
+import { calendarDrivers } from '../lib/calendars.ts'
+import { clockDrivers } from '../lib/clocks.ts'
 import { clampEpoch, planetSystemAt } from '../lib/kepler.ts'
 
 const epoch = inject(epochKey)
@@ -15,6 +16,47 @@ const viewed = epoch.viewed
 const live = epoch.live
 const snapshot = computed(() => planetSystemAt(viewed.value, 'earth'))
 const earth = computed(() => snapshot.value.parent)
+const NAMES_STORAGE_KEY = 'solestia.calendarNames'
+
+type NamesMode = 'auto' | 'native'
+
+function storedNamesMode(): NamesMode {
+  try {
+    const raw = localStorage.getItem(NAMES_STORAGE_KEY)
+    if (raw === 'auto' || raw === 'native') return raw
+  } catch {
+    // Private mode or quota — keep the session default.
+  }
+  return 'auto'
+}
+
+const calendarId = ref<(typeof calendarDrivers)[number]['id']>('gregory')
+const calendar = computed(
+  () => calendarDrivers.find((driver) => driver.id === calendarId.value) ?? calendarDrivers[0],
+)
+const clockId = ref<(typeof clockDrivers)[number]['id']>('civil-12')
+const clock = computed(
+  () => clockDrivers.find((driver) => driver.id === clockId.value) ?? clockDrivers[0],
+)
+const namesMode = ref<NamesMode>(storedNamesMode())
+const calendarLocale = computed(() =>
+  namesMode.value === 'native' ? calendar.value.nativeLocale : undefined,
+)
+const clockLocale = computed(() =>
+  namesMode.value === 'native' ? clock.value.nativeLocale : undefined,
+)
+
+watch(namesMode, (mode) => {
+  try {
+    localStorage.setItem(NAMES_STORAGE_KEY, mode)
+  } catch {
+    // Private mode or quota — the picker still works for the session.
+  }
+})
+
+function toggleNamesMode() {
+  namesMode.value = namesMode.value === 'native' ? 'auto' : 'native'
+}
 
 function setViewed(at: Date) {
   live.value = false
@@ -29,12 +71,69 @@ function setViewed(at: Date) {
         <PlanetClock :planet="earth" />
       </section>
       <section class="studio__time" aria-label="Time">
-        <h2 class="studio__label">Time</h2>
-        <AnalogClock :at="viewed" />
+        <div class="studio__time-header">
+          <h2 class="studio__label">Time</h2>
+          <div class="calendar-pickers">
+            <button
+              v-if="clock.nativeLocale"
+              type="button"
+              class="names-toggle"
+              :aria-pressed="namesMode === 'native'"
+              :aria-label="`Clock names ${namesMode}. Click to switch between auto and native.`"
+              title="Auto uses Latin names. Native uses this clock’s own language."
+              @click="toggleNamesMode"
+            >
+              <span class="names-toggle__label">Names</span>
+              <span class="names-toggle__mode">{{
+                namesMode === 'native' ? 'Native' : 'Auto'
+              }}</span>
+            </button>
+            <label class="calendar-picker">
+              <span class="calendar-picker__label">Clock</span>
+              <select v-model="clockId" class="calendar-picker__select">
+                <option v-for="driver in clockDrivers" :key="driver.id" :value="driver.id">
+                  {{ driver.name }}
+                </option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <AnalogClock :at="viewed" :driver="clock" :locale="clockLocale" />
       </section>
       <section class="studio__date" aria-label="Date">
-        <h2 class="studio__label">Date</h2>
-        <MonthCalendar :at="viewed" :driver="gregorianCalendar" @change="setViewed" />
+        <div class="studio__date-header">
+          <h2 class="studio__label">Date</h2>
+          <div class="calendar-pickers">
+            <button
+              v-if="calendar.nativeLocale"
+              type="button"
+              class="names-toggle"
+              :aria-pressed="namesMode === 'native'"
+              :aria-label="`Calendar names ${namesMode}. Click to switch between auto and native.`"
+              title="Auto uses your browser language. Native uses this calendar’s own language."
+              @click="toggleNamesMode"
+            >
+              <span class="names-toggle__label">Names</span>
+              <span class="names-toggle__mode">{{
+                namesMode === 'native' ? 'Native' : 'Auto'
+              }}</span>
+            </button>
+            <label class="calendar-picker">
+              <span class="calendar-picker__label">Calendar</span>
+              <select v-model="calendarId" class="calendar-picker__select">
+                <option v-for="driver in calendarDrivers" :key="driver.id" :value="driver.id">
+                  {{ driver.name }}
+                </option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <MonthCalendar
+          :at="viewed"
+          :driver="calendar"
+          :locale="calendarLocale"
+          @change="setViewed"
+        />
       </section>
     </div>
     <RouterLink class="back" :to="{ name: 'earth-system' }">← Earth</RouterLink>
@@ -106,12 +205,85 @@ $page-medium: 36rem;
 }
 
 .studio__label {
-  margin: 0 0 $spacing-sm;
+  margin: 0;
   color: $color-text-muted;
   font-size: 0.75rem;
   font-weight: 500;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.studio__time-header,
+.studio__date-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $spacing-sm;
+  margin-bottom: $spacing-sm;
+}
+
+.calendar-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $spacing-sm;
+}
+
+.names-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: $spacing-xs;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: $color-text-muted;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.names-toggle:hover,
+.names-toggle:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.names-toggle[aria-pressed='true'] .names-toggle__mode {
+  color: var(--accent);
+}
+
+.names-toggle__mode {
+  font-family: $font-mono;
+  font-size: 0.75rem;
+}
+
+.calendar-picker {
+  display: flex;
+  align-items: center;
+  gap: $spacing-xs;
+}
+
+.calendar-picker__label {
+  color: $color-text-muted;
+  font-size: 0.7rem;
+}
+
+.calendar-picker__select {
+  min-width: 0;
+  max-width: 10rem;
+  border: 1px solid var(--border);
+  border-radius: $radius-sm;
+  padding: 0.2rem 1.5rem 0.2rem 0.4rem;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
+}
+
+.calendar-picker__select:focus-visible {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .back {

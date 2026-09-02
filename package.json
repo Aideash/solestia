@@ -11,7 +11,10 @@
     "build": "vue-tsc -b && vite build",
     "type-check": "vue-tsc -b",
     "preview": "vite preview",
-    "check": "node --experimental-strip-types --no-warnings scripts/check-kepler.ts",
+    "check": "npm run check:kepler && npm run check:calendars && npm run check:clocks",
+    "check:kepler": "node --experimental-strip-types --no-warnings scripts/check-kepler.ts",
+    "check:calendars": "node --experimental-strip-types --no-warnings scripts/check-calendars.ts",
+    "check:clocks": "node --experimental-strip-types --no-warnings scripts/check-clocks.ts",
     "generate:asteroids": "node --experimental-strip-types --no-warnings scripts/generate-asteroid-ephemerides.ts && prettier --write src/data/generated/asteroidEphemerides.ts",
     "generate:kuiper": "node --experimental-strip-types --no-warnings scripts/generate-kuiper-ephemerides.ts && prettier --write src/data/generated/kuiperEphemerides.ts",
     "lint": "eslint .",
@@ -20,6 +23,8 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "metric-calendar": "1.0.1",
+    "temporal-polyfill": "^1.0.4",
     "vue": "^3.5.40",
     "vue-router": "^4.6.4"
   },

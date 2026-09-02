@@ -1,20 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { ClockDriver } from '../lib/clocks.ts'
 
 const props = defineProps<{
   at: Date
+  driver: ClockDriver
+  locale?: string
 }>()
 
 const cx = 50
 const cy = 50
 const faceRadius = 42
 const tickOuter = 40
-const hourTickInner = 34
-const minuteTickInner = 37.5
+const majorTickInner = 34
+const minorTickInner = 37.5
 const numberRadius = 28
-const hourHandLength = 22
-const minuteHandLength = 30
-const secondHandLength = 32
+const majorHandLength = 22
+const middleHandLength = 30
+const minorHandLength = 32
 
 function dialPoint(radius: number, fraction: number): { x: number; y: number } {
   const angle = fraction * Math.PI * 2
@@ -24,61 +27,44 @@ function dialPoint(radius: number, fraction: number): { x: number; y: number } {
   }
 }
 
-const hours = computed(() => props.at.getHours())
-const minutes = computed(() => props.at.getMinutes())
-const seconds = computed(() => props.at.getSeconds())
-
-const hourFraction = computed(
-  () => ((hours.value % 12) + minutes.value / 60 + seconds.value / 3600) / 12,
-)
-const minuteFraction = computed(() => (minutes.value + seconds.value / 60) / 60)
-const secondFraction = computed(() => seconds.value / 60)
-
-const hourHand = computed(() => dialPoint(hourHandLength, hourFraction.value))
-const minuteHand = computed(() => dialPoint(minuteHandLength, minuteFraction.value))
-const secondHand = computed(() => dialPoint(secondHandLength, secondFraction.value))
-
-const hourTicks = Array.from({ length: 12 }, (_, i) => {
-  const fraction = i / 12
-  const from = dialPoint(hourTickInner, fraction)
-  const to = dialPoint(tickOuter, fraction)
-  return { key: i, x1: from.x, y1: from.y, x2: to.x, y2: to.y }
-})
-
-const minuteTicks = Array.from({ length: 60 }, (_, i) => {
-  if (i % 5 === 0) return null
-  const fraction = i / 60
-  const from = dialPoint(minuteTickInner, fraction)
-  const to = dialPoint(tickOuter, fraction)
-  return { key: i, x1: from.x, y1: from.y, x2: to.x, y2: to.y }
-}).filter((tick) => tick !== null)
-
-const numerals = Array.from({ length: 12 }, (_, i) => {
-  const hour = i === 0 ? 12 : i
-  const point = dialPoint(numberRadius, i / 12)
-  return { key: hour, hour, x: point.x, y: point.y }
-})
-
-const zone = computed(() => {
-  const part = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
-    .formatToParts(props.at)
-    .find((entry) => entry.type === 'timeZoneName')
-  return part?.value ?? ''
-})
-
-const digital = computed(() =>
-  props.at.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
+const dial = computed(() => props.driver.dial)
+const hands = computed(() => props.driver.hands(props.at))
+const label = computed(() => props.driver.label(props.at, props.locale))
+const numerals = computed(() =>
+  props.driver.numerals(props.locale).map((numeral) => {
+    const point = dialPoint(numberRadius, numeral.fraction)
+    return { ...numeral, x: point.x, y: point.y }
   }),
 )
 
-const label = computed(() => {
-  const parts = [digital.value]
-  if (zone.value) parts.push(zone.value)
-  return parts.join(' ')
+const majorHand = computed(() => dialPoint(majorHandLength, hands.value.major))
+const middleHand = computed(() => dialPoint(middleHandLength, hands.value.middle))
+const minorHand = computed(() =>
+  hands.value.minor === null ? null : dialPoint(minorHandLength, hands.value.minor),
+)
+
+const majorTicks = computed(() =>
+  Array.from({ length: dial.value.majorTicks }, (_, i) => {
+    const fraction = i / dial.value.majorTicks
+    const from = dialPoint(majorTickInner, fraction)
+    const to = dialPoint(tickOuter, fraction)
+    return { key: i, x1: from.x, y1: from.y, x2: to.x, y2: to.y }
+  }),
+)
+
+const minorTicks = computed(() => {
+  const { majorTicks: majors, minorTicks: minors } = dial.value
+  if (minors <= majors) return []
+  return Array.from({ length: minors }, (_, i) => {
+    if ((i * majors) % minors === 0) return null
+    const fraction = i / minors
+    const from = dialPoint(minorTickInner, fraction)
+    const to = dialPoint(tickOuter, fraction)
+    return { key: i, x1: from.x, y1: from.y, x2: to.x, y2: to.y }
+  }).filter((tick) => tick !== null)
 })
+
+const denseNumerals = computed(() => numerals.value.length >= 20)
 </script>
 
 <template>
@@ -88,7 +74,7 @@ const label = computed(() => {
       <circle class="analog__edge" :cx="cx" :cy="cy" :r="faceRadius + 2" />
       <circle class="analog__face" :cx="cx" :cy="cy" :r="faceRadius" />
       <line
-        v-for="tick in minuteTicks"
+        v-for="tick in minorTicks"
         :key="`min-${tick.key}`"
         class="analog__tick analog__tick--minute"
         :x1="tick.x1"
@@ -97,7 +83,7 @@ const label = computed(() => {
         :y2="tick.y2"
       />
       <line
-        v-for="tick in hourTicks"
+        v-for="tick in majorTicks"
         :key="`hour-${tick.key}`"
         class="analog__tick analog__tick--hour"
         :x1="tick.x1"
@@ -109,37 +95,42 @@ const label = computed(() => {
         v-for="numeral in numerals"
         :key="numeral.key"
         class="analog__numeral"
+        :class="{ 'analog__numeral--dense': denseNumerals }"
         :x="numeral.x"
         :y="numeral.y"
         text-anchor="middle"
         dominant-baseline="middle"
       >
-        {{ numeral.hour }}
+        {{ numeral.text }}
       </text>
       <line
         class="analog__hand analog__hand--hour"
         :x1="cx"
         :y1="cy"
-        :x2="hourHand.x"
-        :y2="hourHand.y"
+        :x2="majorHand.x"
+        :y2="majorHand.y"
       />
       <line
         class="analog__hand analog__hand--minute"
         :x1="cx"
         :y1="cy"
-        :x2="minuteHand.x"
-        :y2="minuteHand.y"
+        :x2="middleHand.x"
+        :y2="middleHand.y"
       />
       <line
+        v-if="minorHand"
         class="analog__hand analog__hand--second"
         :x1="cx"
         :y1="cy"
-        :x2="secondHand.x"
-        :y2="secondHand.y"
+        :x2="minorHand.x"
+        :y2="minorHand.y"
       />
       <circle class="analog__hub" :cx="cx" :cy="cy" r="2.2" />
     </svg>
     <p class="analog__readout">{{ label }}</p>
+    <span class="update-note" :class="{ visible: !driver.id?.includes('civil') }"
+      >* Clock updates once an SI-second regardless of mode used</span
+    >
   </div>
 </template>
 
@@ -193,6 +184,10 @@ const label = computed(() => {
   font-weight: 500;
 }
 
+.analog__numeral--dense {
+  font-size: 4.2px;
+}
+
 .analog__hand {
   stroke-linecap: round;
 }
@@ -222,5 +217,17 @@ const label = computed(() => {
   font-family: $font-mono;
   font-size: calc(0.8125rem * var(--analog-scale));
   text-align: center;
+}
+
+.update-note {
+  font-size: 0.75rem;
+  color: $color-text-muted;
+  text-align: center;
+  margin-top: $spacing-xs;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  &.visible {
+    opacity: 0.8;
+  }
 }
 </style>

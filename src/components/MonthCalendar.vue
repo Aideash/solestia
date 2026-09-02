@@ -1,41 +1,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  atCivilDay,
-  shiftCivilMonth,
-  shiftCivilYear,
-  type CalendarDriver,
-} from '../lib/calendars.ts'
+import type { CalendarDriver } from '../lib/calendars.ts'
 
 const props = defineProps<{
   at: Date
   driver: CalendarDriver
+  locale?: string
 }>()
 
 const emit = defineEmits<{
   change: [at: Date]
 }>()
 
-const grid = computed(() => props.driver.monthGrid(props.at))
+const grid = computed(() => props.driver.monthGrid(props.at, props.locale))
 const parts = computed(() => props.driver.dateParts(props.at))
-// const caption = computed(() => props.driver.label(props.at))
 
-function isSelected(year: number, month: number, day: number): boolean {
-  const current = parts.value
-  return current.year === year && current.month === month && current.day === day
+function isSelected(key: string): boolean {
+  return parts.value.key === key
 }
 
-function pickDay(year: number, month: number, day: number, inWindow: boolean) {
+function pickDay(instant: Date, inWindow: boolean) {
   if (!inWindow) return
-  emit('change', atCivilDay(props.at, year, month, day))
+  emit('change', instant)
 }
 
 function stepMonth(delta: number) {
-  emit('change', shiftCivilMonth(props.at, delta))
+  emit('change', props.driver.shiftMonth(props.at, delta))
 }
 
 function stepYear(delta: number) {
-  emit('change', shiftCivilYear(props.at, delta))
+  emit('change', props.driver.shiftYear(props.at, delta))
 }
 </script>
 
@@ -53,7 +47,17 @@ function stepYear(delta: number) {
       >
         ‹
       </button>
-      <h3 class="calendar__heading">{{ grid.heading }}</h3>
+      <h3 class="calendar__heading" :title="grid.headingSecondary ? undefined : grid.headingTitle">
+        <span class="calendar__heading-primary">{{ grid.headingPrimary }}</span>
+        <span
+          v-if="grid.headingSecondary"
+          class="calendar__heading-secondary"
+          :title="grid.headingTitle"
+          :aria-label="grid.headingTitle"
+        >
+          {{ grid.headingSecondary }}
+        </span>
+      </h3>
       <button type="button" class="calendar__nav" aria-label="Next month" @click="stepMonth(1)">
         ›
       </button>
@@ -62,34 +66,47 @@ function stepYear(delta: number) {
       </button>
     </div>
     <!-- <p class="calendar__caption">{{ caption }}</p> -->
-    <div class="calendar__grid" role="grid" :aria-label="`${driver.name} calendar`">
+    <div
+      class="calendar__grid"
+      role="grid"
+      :aria-label="`${driver.name} calendar`"
+      :style="{ '--calendar-columns': grid.columnCount }"
+    >
       <span
         v-for="label in grid.weekdayLabels"
-        :key="label"
+        :key="label.long"
         class="calendar__weekday"
         role="columnheader"
+        :title="label.long"
+        :aria-label="label.long"
       >
-        {{ label }}
+        {{ label.short }}
       </span>
       <button
         v-for="(cell, index) in grid.cells"
-        :key="`${cell.year}-${cell.month}-${cell.day}-${index}`"
+        :key="`${cell.key}-${index}`"
         type="button"
         class="calendar__day"
         :class="{
           'calendar__day--outside': !cell.inMonth,
           'calendar__day--muted': !cell.inWindow,
-          'calendar__day--selected': isSelected(cell.year, cell.month, cell.day),
+          'calendar__day--selected': isSelected(cell.key),
+          'calendar__day--named': cell.label,
         }"
         role="gridcell"
         :disabled="!cell.inWindow"
-        :aria-current="isSelected(cell.year, cell.month, cell.day) ? 'date' : undefined"
-        @click="pickDay(cell.year, cell.month, cell.day, cell.inWindow)"
+        :aria-current="isSelected(cell.key) ? 'date' : undefined"
+        :aria-label="cell.title"
+        :title="cell.title"
+        @click="pickDay(cell.instant, cell.inWindow)"
       >
-        {{ cell.day }}
+        {{ cell.label ?? cell.day }}
       </button>
     </div>
   </div>
+  <p v-else class="calendar__unavailable">
+    The {{ driver.name }} calendar is unavailable in this browser.
+  </p>
 </template>
 
 <style scoped lang="scss">
@@ -101,6 +118,7 @@ function stepYear(delta: number) {
 
   display: grid;
   gap: $spacing-sm;
+  width: 100%;
   min-width: 0;
   max-width: calc(34rem * var(--calendar-scale));
   margin-inline: auto;
@@ -119,10 +137,23 @@ function stepYear(delta: number) {
 }
 
 .calendar__heading {
+  display: grid;
+  justify-items: center;
   margin: 0;
   text-align: center;
   font-size: 0.95rem;
   font-weight: 600;
+}
+
+.calendar__heading-secondary {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: help;
+}
+
+.calendar__heading[title] {
+  cursor: help;
 }
 
 .calendar__nav {
@@ -150,9 +181,16 @@ function stepYear(delta: number) {
 //   text-align: center;
 // }
 
+.calendar__unavailable {
+  margin: 0;
+  color: $color-text-muted;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 .calendar__grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--calendar-columns), minmax(0, 1fr));
   gap: 0.15rem;
 }
 
@@ -165,7 +203,7 @@ function stepYear(delta: number) {
 }
 
 .calendar__day {
-  aspect-ratio: 1;
+  // aspect-ratio: 1;
   min-height: 1.85rem;
   padding: 0;
   border: 1px solid transparent;
@@ -175,6 +213,13 @@ function stepYear(delta: number) {
   font: inherit;
   font-size: 0.8rem;
   cursor: pointer;
+}
+
+.calendar__day--named {
+  min-height: 2.4rem;
+  padding-inline: 0.15rem;
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
 }
 
 .calendar__day:hover,
