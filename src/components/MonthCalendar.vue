@@ -6,14 +6,15 @@ const props = defineProps<{
   at: Date
   driver: CalendarDriver
   locale?: string
+  timeZone?: string
 }>()
 
 const emit = defineEmits<{
   change: [at: Date]
 }>()
 
-const grid = computed(() => props.driver.monthGrid(props.at, props.locale))
-const parts = computed(() => props.driver.dateParts(props.at))
+const grid = computed(() => props.driver.monthGrid(props.at, props.locale, props.timeZone))
+const parts = computed(() => props.driver.dateParts(props.at, props.timeZone))
 
 function isSelected(key: string): boolean {
   return parts.value.key === key
@@ -25,11 +26,11 @@ function pickDay(instant: Date, inWindow: boolean) {
 }
 
 function stepMonth(delta: number) {
-  emit('change', props.driver.shiftMonth(props.at, delta))
+  emit('change', props.driver.shiftMonth(props.at, delta, props.timeZone))
 }
 
 function stepYear(delta: number) {
-  emit('change', props.driver.shiftYear(props.at, delta))
+  emit('change', props.driver.shiftYear(props.at, delta, props.timeZone))
 }
 </script>
 

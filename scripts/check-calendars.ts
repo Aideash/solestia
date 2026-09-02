@@ -11,13 +11,13 @@ function localDate(year: number, month: number, day: number): Date {
   return new Date(year, month - 1, day, 12, 34, 56, 789)
 }
 
-function assertSelectedCellRoundTrip(calendar: CalendarDriver, at: Date): void {
-  const selected = calendar.dateParts(at)
-  const grid = calendar.monthGrid(at)
+function assertSelectedCellRoundTrip(calendar: CalendarDriver, at: Date, timeZone?: string): void {
+  const selected = calendar.dateParts(at, timeZone)
+  const grid = calendar.monthGrid(at, undefined, timeZone)
   assert.ok(grid)
   const cell = grid.cells.find((candidate) => candidate.key === selected.key)
   assert.ok(cell, `${calendar.name} grid does not contain its selected date`)
-  assert.equal(calendar.dateParts(cell.instant).key, selected.key)
+  assert.equal(calendar.dateParts(cell.instant, timeZone).key, selected.key)
 }
 
 const french = driver('french-republican')
@@ -102,5 +102,19 @@ assert.equal(chineseNative.headingTitle, 'Fire (Yang) — Heavenly Stem\nHorse �
 assert.equal(chineseNative.weekdayLabels[0]?.short, '周日')
 
 assertSelectedCellRoundTrip(chinese, chineseAt)
+
+const gregory = driver('gregory')
+const lateUtc = new Date(Date.UTC(2026, 2, 20, 23, 0, 0))
+assert.equal(gregory.dateParts(lateUtc, 'UTC').day, 20)
+assert.equal(gregory.dateParts(lateUtc, 'America/New_York').day, 20)
+assert.equal(gregory.dateParts(lateUtc, 'Pacific/Auckland').day, 21)
+assertSelectedCellRoundTrip(gregory, lateUtc, 'Pacific/Auckland')
+assertSelectedCellRoundTrip(gregory, lateUtc, 'America/New_York')
+assertSelectedCellRoundTrip(french, lateUtc, 'Pacific/Auckland')
+assertSelectedCellRoundTrip(metric, lateUtc, 'Pacific/Auckland')
+
+const aucklandShift = gregory.shiftMonth(lateUtc, 1, 'Pacific/Auckland')
+assert.equal(gregory.dateParts(aucklandShift, 'Pacific/Auckland').month, 4)
+assert.equal(gregory.dateParts(aucklandShift, 'Pacific/Auckland').day, 21)
 
 console.log('Calendar checks passed')

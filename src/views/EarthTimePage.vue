@@ -8,6 +8,7 @@ import { epochKey } from '../epoch.ts'
 import { calendarDrivers } from '../lib/calendars.ts'
 import { clockDrivers } from '../lib/clocks.ts'
 import { clampEpoch, planetSystemAt } from '../lib/kepler.ts'
+import { groupedTimeZones, hostTimeZoneId, isTimeZoneId, timeZoneLabel } from '../lib/timeZones.ts'
 
 const epoch = inject(epochKey)
 if (!epoch) throw new Error('Epoch context is missing')
@@ -17,6 +18,7 @@ const live = epoch.live
 const snapshot = computed(() => planetSystemAt(viewed.value, 'earth'))
 const earth = computed(() => snapshot.value.parent)
 const NAMES_STORAGE_KEY = 'solestia.calendarNames'
+const ZONE_STORAGE_KEY = 'solestia.earthTimeZone'
 
 type NamesMode = 'auto' | 'native'
 
@@ -30,6 +32,16 @@ function storedNamesMode(): NamesMode {
   return 'auto'
 }
 
+function storedTimeZoneId(): string {
+  try {
+    const raw = localStorage.getItem(ZONE_STORAGE_KEY)
+    if (raw && isTimeZoneId(raw)) return raw
+  } catch {
+    // Private mode or quota — keep the session default.
+  }
+  return hostTimeZoneId()
+}
+
 const calendarId = ref<(typeof calendarDrivers)[number]['id']>('gregory')
 const calendar = computed(
   () => calendarDrivers.find((driver) => driver.id === calendarId.value) ?? calendarDrivers[0],
@@ -39,6 +51,8 @@ const clock = computed(
   () => clockDrivers.find((driver) => driver.id === clockId.value) ?? clockDrivers[0],
 )
 const namesMode = ref<NamesMode>(storedNamesMode())
+const timeZoneId = ref(storedTimeZoneId())
+const timeZoneGroups = groupedTimeZones()
 const calendarLocale = computed(() =>
   namesMode.value === 'native' ? calendar.value.nativeLocale : undefined,
 )
@@ -49,6 +63,14 @@ const clockLocale = computed(() =>
 watch(namesMode, (mode) => {
   try {
     localStorage.setItem(NAMES_STORAGE_KEY, mode)
+  } catch {
+    // Private mode or quota — the picker still works for the session.
+  }
+})
+
+watch(timeZoneId, (id) => {
+  try {
+    localStorage.setItem(ZONE_STORAGE_KEY, id)
   } catch {
     // Private mode or quota — the picker still works for the session.
   }
@@ -69,6 +91,16 @@ function setViewed(at: Date) {
     <div class="studio">
       <section class="studio__center" aria-label="Planet clock">
         <PlanetClock :planet="earth" />
+        <label class="calendar-picker studio__zone">
+          <span class="calendar-picker__label">Zone</span>
+          <select v-model="timeZoneId" class="calendar-picker__select studio__zone-select">
+            <optgroup v-for="group in timeZoneGroups" :key="group.region" :label="group.region">
+              <option v-for="id in group.ids" :key="id" :value="id">
+                {{ timeZoneLabel(id) }}
+              </option>
+            </optgroup>
+          </select>
+        </label>
       </section>
       <section class="studio__time" aria-label="Time">
         <div class="studio__time-header">
@@ -98,7 +130,13 @@ function setViewed(at: Date) {
             </label>
           </div>
         </div>
-        <AnalogClock :at="viewed" :driver="clock" :locale="clockLocale" />
+        <AnalogClock
+          :at="viewed"
+          :driver="clock"
+          :locale="clockLocale"
+          :time-zone="timeZoneId"
+          @change="setViewed"
+        />
       </section>
       <section class="studio__date" aria-label="Date">
         <div class="studio__date-header">
@@ -132,6 +170,7 @@ function setViewed(at: Date) {
           :at="viewed"
           :driver="calendar"
           :locale="calendarLocale"
+          :time-zone="timeZoneId"
           @change="setViewed"
         />
       </section>
@@ -153,7 +192,7 @@ $page-medium: 36rem;
 
 .studio {
   display: grid;
-  gap: $spacing-lg;
+  gap: $spacing-xl;
   grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
     'center'
@@ -163,8 +202,11 @@ $page-medium: 36rem;
 
 .studio__center {
   grid-area: center;
+  display: grid;
+  justify-items: center;
   align-self: start;
   justify-self: center;
+  gap: $spacing-lg;
   width: min(16rem, 100%);
 }
 
@@ -202,6 +244,17 @@ $page-medium: 36rem;
   --calendar-scale: 0.6;
 
   align-self: center;
+}
+
+.studio__zone {
+  justify-self: stretch;
+  justify-content: center;
+  min-width: 0;
+}
+
+.studio__zone-select {
+  flex: 1 1 auto;
+  max-width: none;
 }
 
 .studio__label {

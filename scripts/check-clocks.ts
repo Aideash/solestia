@@ -1,10 +1,20 @@
 import assert from 'node:assert/strict'
-import { clockDrivers, type ClockDriver } from '../src/lib/clocks.ts'
+import { clockDrivers, withHandAt, type ClockDriver, type ClockHand } from '../src/lib/clocks.ts'
 
 function driver(id: string): ClockDriver {
   const result = clockDrivers.find((candidate) => candidate.id === id)
   assert.ok(result, `Missing ${id} clock driver`)
   return result
+}
+
+function fraction(value: number): number {
+  return value - Math.floor(value)
+}
+
+/** Compares two positions on a dial, where 0.999 and 0.001 nearly coincide. */
+function closeTurn(actual: number, expected: number, tolerance: number, what: string): void {
+  const apart = Math.abs(fraction(actual - expected + 0.5) - 0.5)
+  assert.ok(apart < tolerance, `${what}: ${actual} is not within ${tolerance} of ${expected}`)
 }
 
 function localTime(
@@ -63,8 +73,19 @@ assert.deepEqual(
   ['civil-12', 'civil-24', 'metric', 'indian', 'chinese-shi', 'swatch'],
 )
 
+const utcNoon = new Date(Date.UTC(2026, 2, 20, 12, 0, 0))
+assert.equal(civil24.hands(utcNoon, 'UTC').major, 0.5)
+assert.equal(metric.label(utcNoon, undefined, 'UTC'), '5h 00m 00s')
+assert.equal(civil24.hands(utcNoon, 'Pacific/Auckland').major, 1 / 24)
+assert.equal(metric.label(utcNoon, undefined, 'Pacific/Auckland'), '0h 41m 66s')
+assert.equal(swatch.label(bielNoon, undefined, 'Pacific/Auckland'), '@500.0')
+assert.equal(swatch.hands(bielNoon, 'America/New_York').major, 0.5)
+
+const sample = localTime(2026, 3, 20, 15, 30, 45)
+const handNames: ClockHand[] = ['major', 'middle', 'minor']
+
 for (const clock of clockDrivers) {
-  const hands = clock.hands(localTime(2026, 3, 20, 15, 30, 45))
+  const hands = clock.hands(sample)
   assert.ok(hands.major >= 0 && hands.major < 1)
   assert.ok(hands.middle >= 0 && hands.middle < 1)
   if (hands.minor !== null) {
@@ -72,6 +93,51 @@ for (const clock of clockDrivers) {
   }
   assert.ok(clock.label(noon).length > 0)
   assert.ok(clock.numerals().length > 0)
+
+  // Dragging inverts `hands` using `periods` and `frameMs`, so the three have
+  // to describe the same movement. UTC keeps the arithmetic free of the DST
+  // shifts the host zone might carry.
+  const frame = clock.frameMs(sample, 'UTC')
+  const utcHands = clock.hands(sample, 'UTC')
+  for (const hand of handNames) {
+    const period = clock.periods[hand]
+    const position = utcHands[hand]
+    if (period === null || position === null) {
+      assert.equal(period === null, position === null, `${clock.id} ${hand}: period vs hand`)
+      continue
+    }
+    closeTurn(position, fraction(frame / period), 1e-9, `${clock.id} ${hand} period`)
+
+    for (const target of [0, 0.125, 0.5, 0.87]) {
+      const moved = withHandAt(clock, sample, hand, target, 'UTC')
+      const movedPosition = clock.hands(moved, 'UTC')[hand]
+      assert.ok(movedPosition !== null)
+      closeTurn(movedPosition, target, 1e-4, `${clock.id} ${hand} round trip`)
+      // The short way around never travels more than half a revolution.
+      assert.ok(
+        Math.abs(moved.getTime() - sample.getTime()) <= period / 2 + 1,
+        `${clock.id} ${hand}: took the long way to ${target}`,
+      )
+    }
+  }
 }
+
+// Hands are geared: placing the hour hand halfway between 3 and 4 carries the
+// minute hand to 30 rather than leaving it where it was.
+const geared = withHandAt(civil12, localTime(2026, 6, 15, 1, 0, 0), 'major', 3.5 / 12)
+assert.equal(geared.getHours(), 3)
+assert.equal(geared.getMinutes(), 30)
+assert.equal(geared.getSeconds(), 0)
+
+// Winding the minute hand forward past the top carries the hour with it,
+// instead of rewinding most of the way around the dial.
+const carried = withHandAt(civil12, localTime(2026, 6, 15, 11, 58, 0), 'middle', 1.2 / 60)
+assert.equal(carried.getHours(), 12)
+assert.equal(carried.getMinutes(), 1)
+assert.equal(carried.getSeconds(), 12)
+
+// A zone-aware clock lands on the requested angle in that zone, not the host's.
+const zoned = withHandAt(civil24, utcNoon, 'major', 6 / 24, 'Asia/Kolkata')
+assert.equal(civil24.hands(zoned, 'Asia/Kolkata').major, 6 / 24)
 
 console.log('clocks: ok')

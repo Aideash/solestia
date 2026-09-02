@@ -6,6 +6,7 @@ import {
 } from 'metric-calendar'
 import { Temporal } from 'temporal-polyfill/full'
 import { ELEMENTS_VALID_FROM_MS, ELEMENTS_VALID_TO_MS } from '../data/planets.ts'
+import { hostTimeZoneId } from './timeZones.ts'
 
 export type CalendarDateParts = {
   year: number
@@ -43,11 +44,11 @@ export type CalendarDriver = {
   id: string
   name: string
   nativeLocale?: string
-  dateParts(instant: Date): CalendarDateParts
-  monthGrid(instant: Date, locale?: string): MonthGrid | null
-  label(instant: Date, locale?: string): string
-  shiftMonth(instant: Date, delta: number): Date
-  shiftYear(instant: Date, delta: number): Date
+  dateParts(instant: Date, timeZone?: string): CalendarDateParts
+  monthGrid(instant: Date, locale?: string, timeZone?: string): MonthGrid | null
+  label(instant: Date, locale?: string, timeZone?: string): string
+  shiftMonth(instant: Date, delta: number, timeZone?: string): Date
+  shiftYear(instant: Date, delta: number, timeZone?: string): Date
 }
 
 const WEEKDAY_SUNDAY = new Date(2024, 0, 7)
@@ -136,9 +137,13 @@ function sexagenaryTitle(yearName: string): string | undefined {
   return `${stem.element} (${stem.polarity}) — Heavenly Stem\n${branch.animal} — Earthly Branch`
 }
 
-function localCalendarDate(instant: Date, calendarId: string) {
+function resolvedTimeZone(timeZone?: string): string {
+  return timeZone ?? hostTimeZoneId()
+}
+
+function localCalendarDate(instant: Date, calendarId: string, timeZone?: string) {
   return Temporal.Instant.fromEpochMilliseconds(instant.getTime())
-    .toZonedDateTimeISO(Temporal.Now.timeZoneId())
+    .toZonedDateTimeISO(resolvedTimeZone(timeZone))
     .withCalendar(calendarId)
 }
 
@@ -348,11 +353,14 @@ function septemberEquinoxDate(gregorianYear: number): CivilDate {
   return result
 }
 
-function localCivilDate(instant: Date): CivilDate {
+function localCivilDate(instant: Date, timeZone?: string): CivilDate {
+  const zoned = Temporal.Instant.fromEpochMilliseconds(instant.getTime()).toZonedDateTimeISO(
+    resolvedTimeZone(timeZone),
+  )
   return {
-    year: instant.getFullYear(),
-    month: instant.getMonth() + 1,
-    day: instant.getDate(),
+    year: zoned.year,
+    month: zoned.month,
+    day: zoned.day,
   }
 }
 
@@ -369,26 +377,28 @@ function civilDateFromOrdinal(ordinal: number): CivilDate {
   }
 }
 
-function civilDateAtViewedTime(date: CivilDate, viewed: Date): Date {
-  return new Date(
-    date.year,
-    date.month - 1,
-    date.day,
-    viewed.getHours(),
-    viewed.getMinutes(),
-    viewed.getSeconds(),
-    viewed.getMilliseconds(),
+function civilDateAtViewedTime(date: CivilDate, viewed: Date, timeZone?: string): Date {
+  const tz = resolvedTimeZone(timeZone)
+  const viewedTime = Temporal.Instant.fromEpochMilliseconds(viewed.getTime())
+    .toZonedDateTimeISO(tz)
+    .toPlainTime()
+  return dateAtTime(
+    Temporal.PlainDate.from({ year: date.year, month: date.month, day: date.day }),
+    viewedTime,
+    tz,
   )
 }
 
-function civilDateInWindow(date: CivilDate): boolean {
-  const start = new Date(date.year, date.month - 1, date.day).getTime()
-  const end = new Date(date.year, date.month - 1, date.day + 1).getTime() - 1
+function civilDateInWindow(date: CivilDate, timeZone?: string): boolean {
+  const tz = resolvedTimeZone(timeZone)
+  const civil = Temporal.PlainDate.from({ year: date.year, month: date.month, day: date.day })
+  const start = civil.toPlainDateTime().toZonedDateTime(tz).epochMilliseconds
+  const end = civil.add({ days: 1 }).toPlainDateTime().toZonedDateTime(tz).epochMilliseconds - 1
   return end >= ELEMENTS_VALID_FROM_MS && start <= ELEMENTS_VALID_TO_MS
 }
 
-function frenchDateParts(instant: Date): FrenchRepublicanDate {
-  const civil = localCivilDate(instant)
+function frenchDateParts(instant: Date, timeZone?: string): FrenchRepublicanDate {
+  const civil = localCivilDate(instant, timeZone)
   const ordinal = civilOrdinal(civil)
   let equinoxYear = civil.year
   let yearStart = septemberEquinoxDate(equinoxYear)
@@ -429,14 +439,14 @@ function frenchDateToCivil(year: number, period: number, day: number): CivilDate
   return civilDateFromOrdinal(civilOrdinal(yearStart) + offset)
 }
 
-function shiftFrenchPeriod(instant: Date, delta: number): Date {
-  const parts = frenchDateParts(instant)
+function shiftFrenchPeriod(instant: Date, delta: number, timeZone?: string): Date {
+  const parts = frenchDateParts(instant, timeZone)
   const currentPeriod = parts.complementary ? 12 : parts.month - 1
   const absolutePeriod = parts.year * 13 + currentPeriod + delta
   const year = Math.floor(absolutePeriod / 13)
   const period = ((absolutePeriod % 13) + 13) % 13
   const day = Math.min(parts.day, frenchPeriodLength(year, period))
-  return civilDateAtViewedTime(frenchDateToCivil(year, period, day), instant)
+  return civilDateAtViewedTime(frenchDateToCivil(year, period, day), instant, timeZone)
 }
 
 function makeFrenchRepublicanDriver(): CalendarDriver {
@@ -444,8 +454,8 @@ function makeFrenchRepublicanDriver(): CalendarDriver {
     id: 'french-republican',
     name: 'French Republican',
     dateParts: frenchDateParts,
-    monthGrid(instant) {
-      const selected = frenchDateParts(instant)
+    monthGrid(instant, _locale, timeZone) {
+      const selected = frenchDateParts(instant, timeZone)
       const period = selected.complementary ? 12 : selected.month - 1
       const length = frenchPeriodLength(selected.year, period)
       const cells = Array.from({ length }, (_, index) => {
@@ -456,9 +466,9 @@ function makeFrenchRepublicanDriver(): CalendarDriver {
         return {
           day,
           key: `french-republican-${selected.year}-${monthCode}-${day}`,
-          instant: civilDateAtViewedTime(civil, instant),
+          instant: civilDateAtViewedTime(civil, instant, timeZone),
           inMonth: true,
-          inWindow: civilDateInWindow(civil),
+          inWindow: civilDateInWindow(civil, timeZone),
           label:
             period === 12
               ? COMPLEMENTARY_DAYS[index]?.replace(/^Fête (de la |du |des |d')/, '')
@@ -477,8 +487,8 @@ function makeFrenchRepublicanDriver(): CalendarDriver {
         cells,
       }
     },
-    label(instant) {
-      const parts = frenchDateParts(instant)
+    label(instant, _locale, timeZone) {
+      const parts = frenchDateParts(instant, timeZone)
       if (parts.complementary) {
         return `${COMPLEMENTARY_DAYS[parts.day - 1]}, An ${parts.year}`
       }
@@ -486,20 +496,19 @@ function makeFrenchRepublicanDriver(): CalendarDriver {
       return `${weekday}, ${parts.day} ${FRENCH_MONTHS[parts.month - 1]}, An ${parts.year}`
     },
     shiftMonth: shiftFrenchPeriod,
-    shiftYear(instant, delta) {
-      const parts = frenchDateParts(instant)
+    shiftYear(instant, delta, timeZone) {
+      const parts = frenchDateParts(instant, timeZone)
       const period = parts.complementary ? 12 : parts.month - 1
       const year = parts.year + delta
       const day = Math.min(parts.day, frenchPeriodLength(year, period))
-      return civilDateAtViewedTime(frenchDateToCivil(year, period, day), instant)
+      return civilDateAtViewedTime(frenchDateToCivil(year, period, day), instant, timeZone)
     },
   }
 }
 
-function metricDateAtLocalCivilDate(instant: Date): MetricDate {
-  return gregorianToMetric(
-    new Date(Date.UTC(instant.getFullYear(), instant.getMonth(), instant.getDate())),
-  )
+function metricDateAtLocalCivilDate(instant: Date, timeZone?: string): MetricDate {
+  const civil = localCivilDate(instant, timeZone)
+  return gregorianToMetric(new Date(Date.UTC(civil.year, civil.month - 1, civil.day)))
 }
 
 function metricPeriodIndex(date: MetricDate): number {
@@ -513,8 +522,8 @@ function metricSpecialDay(date: MetricDate): number {
   return Math.max(1, names.indexOf(date.specialDay) + 1)
 }
 
-function metricParts(instant: Date): CalendarDateParts {
-  const metric = metricDateAtLocalCivilDate(instant)
+function metricParts(instant: Date, timeZone?: string): CalendarDateParts {
+  const metric = metricDateAtLocalCivilDate(instant, timeZone)
   const day = metric.month === 0 ? metricSpecialDay(metric) : metric.day
   const monthCode = metric.isTurning
     ? 'turning'
@@ -583,15 +592,15 @@ function metricDateToCivil(year: number, period: number, day: number): CivilDate
   }
 }
 
-function shiftMetricPeriod(instant: Date, delta: number): Date {
-  const metric = metricDateAtLocalCivilDate(instant)
+function shiftMetricPeriod(instant: Date, delta: number, timeZone?: string): Date {
+  const metric = metricDateAtLocalCivilDate(instant, timeZone)
   const currentPeriod = metricPeriodIndex(metric)
   const currentDay = metric.month === 0 ? metricSpecialDay(metric) : metric.day
   const absolutePeriod = metric.year * 14 + currentPeriod + delta
   const year = Math.floor(absolutePeriod / 14)
   const period = ((absolutePeriod % 14) + 14) % 14
   const day = Math.min(currentDay, metricPeriodDetails(year, period).length)
-  return civilDateAtViewedTime(metricDateToCivil(year, period, day), instant)
+  return civilDateAtViewedTime(metricDateToCivil(year, period, day), instant, timeZone)
 }
 
 function makeMetricCalendarDriver(): CalendarDriver {
@@ -599,8 +608,8 @@ function makeMetricCalendarDriver(): CalendarDriver {
     id: 'metric',
     name: 'Metric (modern)',
     dateParts: metricParts,
-    monthGrid(instant) {
-      const metric = metricDateAtLocalCivilDate(instant)
+    monthGrid(instant, _locale, timeZone) {
+      const metric = metricDateAtLocalCivilDate(instant, timeZone)
       const period = metricPeriodIndex(metric)
       const details = metricPeriodDetails(metric.year, period)
       const monthCode =
@@ -611,9 +620,9 @@ function makeMetricCalendarDriver(): CalendarDriver {
         return {
           day,
           key: `metric-${metric.year}-${monthCode}-${day}`,
-          instant: civilDateAtViewedTime(civil, instant),
+          instant: civilDateAtViewedTime(civil, instant, timeZone),
           inMonth: true,
-          inWindow: civilDateInWindow(civil),
+          inWindow: civilDateInWindow(civil, timeZone),
           label: details.specialNames?.[index],
           title: details.specialNames?.[index],
         }
@@ -625,19 +634,19 @@ function makeMetricCalendarDriver(): CalendarDriver {
         cells,
       }
     },
-    label(instant) {
-      const metric = metricDateAtLocalCivilDate(instant)
+    label(instant, _locale, timeZone) {
+      const metric = metricDateAtLocalCivilDate(instant, timeZone)
       if (metric.month === 0) return `${metric.specialDay}, Year ${metric.year}`
       return `${metric.dayName}, ${metric.monthName} ${metric.day}, Year ${metric.year}`
     },
     shiftMonth: shiftMetricPeriod,
-    shiftYear(instant, delta) {
-      const metric = metricDateAtLocalCivilDate(instant)
+    shiftYear(instant, delta, timeZone) {
+      const metric = metricDateAtLocalCivilDate(instant, timeZone)
       const period = metricPeriodIndex(metric)
       const currentDay = metric.month === 0 ? metricSpecialDay(metric) : metric.day
       const year = metric.year + delta
       const day = Math.min(currentDay, metricPeriodDetails(year, period).length)
-      return civilDateAtViewedTime(metricDateToCivil(year, period, day), instant)
+      return civilDateAtViewedTime(metricDateToCivil(year, period, day), instant, timeZone)
     },
   }
 }
@@ -647,8 +656,8 @@ function makeCalendarDriver(id: string, name: string, nativeLocale?: string): Ca
     id,
     name,
     nativeLocale,
-    dateParts(instant) {
-      const date = localCalendarDate(instant, id).toPlainDate()
+    dateParts(instant, timeZone) {
+      const date = localCalendarDate(instant, id, timeZone).toPlainDate()
       return {
         year: date.year,
         month: date.month,
@@ -657,10 +666,10 @@ function makeCalendarDriver(id: string, name: string, nativeLocale?: string): Ca
         key: date.toString(),
       }
     },
-    monthGrid(instant, locale) {
+    monthGrid(instant, locale, timeZone) {
       /** A calendar can fail on hosts whose ICU data the polyfill cannot read; degrade instead. */
       try {
-        const viewed = localCalendarDate(instant, id)
+        const viewed = localCalendarDate(instant, id, timeZone)
         const selectedDate = viewed.toPlainDate()
         const first = selectedDate.with({ day: 1 })
         const gridStart = first.subtract({ days: first.dayOfWeek % 7 })
@@ -681,6 +690,7 @@ function makeCalendarDriver(id: string, name: string, nativeLocale?: string): Ca
           calendar: id,
           year: 'numeric',
           month: 'long',
+          timeZone: timeZoneId,
         })
         const heading =
           id === 'chinese'
@@ -698,18 +708,25 @@ function makeCalendarDriver(id: string, name: string, nativeLocale?: string): Ca
         return null
       }
     },
-    label(instant, locale) {
+    label(instant, locale, timeZone) {
       return new Intl.DateTimeFormat(locale, {
         ...CALENDAR_FORMAT_OPTIONS,
         calendar: id,
+        timeZone: resolvedTimeZone(timeZone),
       }).format(instant)
     },
-    shiftMonth(instant, delta) {
-      const next = localCalendarDate(instant, id).add({ months: delta }, { overflow: 'constrain' })
+    shiftMonth(instant, delta, timeZone) {
+      const next = localCalendarDate(instant, id, timeZone).add(
+        { months: delta },
+        { overflow: 'constrain' },
+      )
       return new Date(next.epochMilliseconds)
     },
-    shiftYear(instant, delta) {
-      const next = localCalendarDate(instant, id).add({ years: delta }, { overflow: 'constrain' })
+    shiftYear(instant, delta, timeZone) {
+      const next = localCalendarDate(instant, id, timeZone).add(
+        { years: delta },
+        { overflow: 'constrain' },
+      )
       return new Date(next.epochMilliseconds)
     },
   }

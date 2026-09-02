@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { ClockDriver } from '../lib/clocks.ts'
+import { computed, ref, useTemplateRef } from 'vue'
+import { withHandAt, type ClockDriver, type ClockHand } from '../lib/clocks.ts'
 
 const props = defineProps<{
   at: Date
   driver: ClockDriver
   locale?: string
+  timeZone?: string
+}>()
+
+const emit = defineEmits<{
+  change: [at: Date]
 }>()
 
 const cx = 50
@@ -28,8 +33,8 @@ function dialPoint(radius: number, fraction: number): { x: number; y: number } {
 }
 
 const dial = computed(() => props.driver.dial)
-const hands = computed(() => props.driver.hands(props.at))
-const label = computed(() => props.driver.label(props.at, props.locale))
+const hands = computed(() => props.driver.hands(props.at, props.timeZone))
+const label = computed(() => props.driver.label(props.at, props.locale, props.timeZone))
 const numerals = computed(() =>
   props.driver.numerals(props.locale).map((numeral) => {
     const point = dialPoint(numberRadius, numeral.fraction)
@@ -65,11 +70,110 @@ const minorTicks = computed(() => {
 })
 
 const denseNumerals = computed(() => numerals.value.length >= 20)
+
+/** How far from a hand, in dial units, a press still counts as grabbing it. */
+const grabRadius = 5
+
+const dialEl = useTemplateRef<SVGSVGElement>('dialEl')
+const dragHand = ref<ClockHand | null>(null)
+const hoverHand = ref<ClockHand | null>(null)
+/**
+ * The drag builds on its own last result rather than on `at`, so a move is
+ * never applied to a value the parent has not handed back yet.
+ */
+let dragAt = props.at
+
+const handSpokes = computed(() => {
+  const spokes: { hand: ClockHand; x: number; y: number }[] = [
+    { hand: 'major', ...majorHand.value },
+    { hand: 'middle', ...middleHand.value },
+  ]
+  if (minorHand.value) spokes.push({ hand: 'minor', ...minorHand.value })
+  return spokes
+})
+
+function dialPointerPoint(event: PointerEvent): { x: number; y: number } | null {
+  const matrix = dialEl.value?.getScreenCTM()
+  if (!matrix) return null
+  const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse())
+  return { x: point.x, y: point.y }
+}
+
+function turnFraction(point: { x: number; y: number }): number {
+  const turns = Math.atan2(point.x - cx, cy - point.y) / (Math.PI * 2)
+  return ((turns % 1) + 1) % 1
+}
+
+/** Distance from a point to the segment running from the hub out to a tip. */
+function spokeDistance(point: { x: number; y: number }, tip: { x: number; y: number }): number {
+  const dx = tip.x - cx
+  const dy = tip.y - cy
+  const lengthSq = dx * dx + dy * dy
+  const along = lengthSq === 0 ? 0 : ((point.x - cx) * dx + (point.y - cy) * dy) / lengthSq
+  const clamped = Math.min(1, Math.max(0, along))
+  return Math.hypot(point.x - (cx + clamped * dx), point.y - (cy + clamped * dy))
+}
+
+function handNear(point: { x: number; y: number }): ClockHand | null {
+  let nearest: ClockHand | null = null
+  let shortest = grabRadius
+  for (const spoke of handSpokes.value) {
+    const distance = spokeDistance(point, spoke)
+    if (distance < shortest) {
+      shortest = distance
+      nearest = spoke.hand
+    }
+  }
+  return nearest
+}
+
+function onPointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  const point = dialPointerPoint(event)
+  if (!point) return
+  const hand = handNear(point)
+  if (!hand) return
+  event.preventDefault()
+  dragHand.value = hand
+  dragAt = props.at
+  dialEl.value?.setPointerCapture(event.pointerId)
+}
+
+function onPointerMove(event: PointerEvent) {
+  const point = dialPointerPoint(event)
+  if (!point) return
+  const hand = dragHand.value
+  if (!hand) {
+    hoverHand.value = handNear(point)
+    return
+  }
+  dragAt = withHandAt(props.driver, dragAt, hand, turnFraction(point), props.timeZone)
+  emit('change', dragAt)
+}
+
+function onPointerUp() {
+  dragHand.value = null
+}
 </script>
 
 <template>
   <div class="analog">
-    <svg class="analog__dial" viewBox="0 0 100 100" role="img" :aria-label="label">
+    <svg
+      ref="dialEl"
+      class="analog__dial"
+      :class="{
+        'analog__dial--grabbable': hoverHand && !dragHand,
+        'analog__dial--grabbing': dragHand,
+      }"
+      viewBox="0 0 100 100"
+      role="img"
+      :aria-label="label"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerUp"
+      @pointerleave="hoverHand = null"
+    >
       <title>{{ label }}</title>
       <circle class="analog__edge" :cx="cx" :cy="cy" :r="faceRadius + 2" />
       <circle class="analog__face" :cx="cx" :cy="cy" :r="faceRadius" />
@@ -129,7 +233,7 @@ const denseNumerals = computed(() => numerals.value.length >= 20)
     </svg>
     <p class="analog__readout">{{ label }}</p>
     <span class="update-note" :class="{ visible: !driver.id?.includes('civil') }"
-      >* Clock updates once an SI-second regardless of mode used</span
+      >* Clock updates once an SI-second in Live regardless of mode used</span
     >
   </div>
 </template>
@@ -151,6 +255,15 @@ const denseNumerals = computed(() => numerals.value.length >= 20)
   width: 100%;
   max-width: calc(16rem * var(--analog-scale));
   height: auto;
+  touch-action: none;
+}
+
+.analog__dial--grabbable {
+  cursor: grab;
+}
+
+.analog__dial--grabbing {
+  cursor: grabbing;
 }
 
 .analog__edge {
