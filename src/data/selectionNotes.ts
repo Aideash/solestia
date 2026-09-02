@@ -24,6 +24,7 @@ export const SELECTION_NOTES: Partial<
   mars: [
     'Perihelion falls in southern summer, so southern seasons run shorter and hotter — the asymmetry behind the planet-encircling dust storms.',
     'The sol is 24h 37m and the tilt 25.2°, both close to Earth’s, but with no large moon to steady it the axis has wandered chaotically over millions of years.',
+    'Double-click Mars to open date and time.',
   ],
   jupiter: [
     'IAU longitude is System III, the magnetic/radio frame; the magnetic picker is the same W.',

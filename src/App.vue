@@ -68,6 +68,11 @@ function onAppKeydown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
+  if (route.name === 'mars-time') {
+    void router.push({ name: 'solar' })
+    event.preventDefault()
+    return
+  }
   if (isDetailView.value) {
     void router.push({ name: 'solar' })
     event.preventDefault()

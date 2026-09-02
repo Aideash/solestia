@@ -11,6 +11,7 @@ import {
   type PlanetSystemId,
   type ViewPlane,
 } from '../data/planetSystems.ts'
+import { timePageFor } from '../data/timePages.ts'
 import { epochKey } from '../epoch.ts'
 import { planetSystemAt } from '../lib/kepler.ts'
 import { router } from '../router.ts'
@@ -21,6 +22,7 @@ const epoch = inject(epochKey)
 if (!epoch) throw new Error('Epoch context is missing')
 
 const system = computed(() => PLANET_SYSTEMS[props.systemId])
+const timePage = computed(() => timePageFor(props.systemId))
 const viewPlane = ref<ViewPlane>(system.value.defaultViewPlane)
 const selectedSatellite = epoch.selectedId
 const snapshot = computed(() => planetSystemAt(epoch.viewed.value, props.systemId))
@@ -73,7 +75,7 @@ function toggleSatellite(id: string) {
       />
     </template>
     <template #controls>
-      <RouterLink v-if="systemId === 'earth'" class="forward" :to="{ name: 'earth-time' }">
+      <RouterLink v-if="timePage" class="forward" :to="{ name: timePage.routeName }">
         Date and time →
       </RouterLink>
       <button

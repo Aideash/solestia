@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict'
 import { calendarDrivers, type CalendarDriver } from '../src/lib/calendars.ts'
+import {
+  clancyCalendar,
+  darianCalendar,
+  darianMonthLength,
+  isDarianLeap,
+} from '../src/lib/marsCalendars.ts'
+import { clancyMarsYear, dateFromMsd, marsSolDate, solarLongitude } from '../src/lib/marsTime.ts'
 
 function driver(id: string): CalendarDriver {
   const result = calendarDrivers.find((candidate) => candidate.id === id)
@@ -116,5 +123,63 @@ assertSelectedCellRoundTrip(metric, lateUtc, 'Pacific/Auckland')
 const aucklandShift = gregory.shiftMonth(lateUtc, 1, 'Pacific/Auckland')
 assert.equal(gregory.dateParts(aucklandShift, 'Pacific/Auckland').month, 4)
 assert.equal(gregory.dateParts(aucklandShift, 'Pacific/Auckland').day, 21)
+
+function wrapSolFraction(msd: number): number {
+  return ((msd % 1) + 1) % 1
+}
+
+assert.equal(isDarianLeap(1), true)
+assert.equal(isDarianLeap(2), false)
+assert.equal(isDarianLeap(10), true)
+assert.equal(isDarianLeap(100), false)
+assert.equal(darianMonthLength(1, 24), 28)
+assert.equal(darianMonthLength(2, 24), 27)
+
+const allisonEpoch = dateFromMsd(0)
+const virgo = darianCalendar.dateParts(allisonEpoch, 'airy')
+assert.equal(virgo.year, 140)
+assert.equal(virgo.month, 19)
+assert.equal(virgo.day, 25)
+assert.equal(darianCalendar.label(allisonEpoch, undefined, 'airy'), 'Sol Mercurii, 25 Virgo 140')
+
+const jan6 = new Date(Date.UTC(2000, 0, 6, 0, 0, 0))
+assert.ok(Math.abs(marsSolDate(jan6) - 44796) < 0.002)
+
+assertSelectedCellRoundTrip(darianCalendar, jan6, 'airy')
+assertSelectedCellRoundTrip(darianCalendar, jan6, 'curiosity')
+assertSelectedCellRoundTrip(clancyCalendar, jan6, 'airy')
+
+const jan6Darian = darianCalendar.dateParts(jan6, 'airy')
+const darianShift = darianCalendar.shiftMonth(jan6, 1, 'airy')
+assert.equal(
+  darianCalendar.dateParts(darianShift, 'airy').month,
+  jan6Darian.month === 24 ? 1 : jan6Darian.month + 1,
+)
+assert.ok(
+  Math.abs(wrapSolFraction(marsSolDate(darianShift)) - wrapSolFraction(marsSolDate(jan6))) < 1e-6,
+)
+
+const my1 = new Date(Date.UTC(1955, 3, 11, 12, 0, 0))
+assert.equal(clancyMarsYear(my1), 1)
+assert.ok(solarLongitude(my1) < 2 || solarLongitude(my1) > 358)
+
+const curiosity = new Date(Date.UTC(2012, 7, 6, 5, 17, 57))
+assertSelectedCellRoundTrip(darianCalendar, curiosity, 'curiosity')
+assertSelectedCellRoundTrip(clancyCalendar, curiosity, 'curiosity')
+assert.ok(clancyMarsYear(curiosity) >= 31 && clancyMarsYear(curiosity) <= 32)
+
+for (const calendar of [darianCalendar, clancyCalendar]) {
+  for (const at of [jan6, curiosity, new Date(Date.UTC(2026, 2, 20, 12, 0, 0))]) {
+    for (const shifted of [
+      calendar.shiftMonth(at, -1, 'airy'),
+      calendar.shiftMonth(at, 1, 'airy'),
+    ]) {
+      assert.ok(
+        Math.abs(wrapSolFraction(marsSolDate(shifted)) - wrapSolFraction(marsSolDate(at))) < 1e-4,
+      )
+      assertSelectedCellRoundTrip(calendar, shifted, 'airy')
+    }
+  }
+}
 
 console.log('Calendar checks passed')

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { clockDrivers, withHandAt, type ClockDriver, type ClockHand } from '../src/lib/clocks.ts'
+import { marsClockDrivers } from '../src/lib/marsClocks.ts'
+import { lmstFraction, marsSolDate } from '../src/lib/marsTime.ts'
 
 function driver(id: string): ClockDriver {
   const result = clockDrivers.find((candidate) => candidate.id === id)
@@ -139,5 +141,43 @@ assert.equal(carried.getSeconds(), 12)
 // A zone-aware clock lands on the requested angle in that zone, not the host's.
 const zoned = withHandAt(civil24, utcNoon, 'major', 6 / 24, 'Asia/Kolkata')
 assert.equal(civil24.hands(zoned, 'Asia/Kolkata').major, 6 / 24)
+
+const marsJan6 = new Date(Date.UTC(2000, 0, 6, 0, 0, 0))
+assert.ok(Math.abs(marsSolDate(marsJan6) - 44796) < 0.002)
+assert.ok(lmstFraction(marsJan6, 'airy') < 0.002 || lmstFraction(marsJan6, 'airy') > 0.998)
+
+const mean24 = marsClockDrivers.find((item) => item.id === 'mars-mean-24')
+const mean12 = marsClockDrivers.find((item) => item.id === 'mars-mean-12')
+assert.ok(mean24 && mean12)
+assert.match(mean24.label(marsJan6, undefined, 'airy'), /MTC$/)
+assert.match(mean24.label(marsJan6, undefined, 'curiosity'), /LMST$/)
+closeTurn(mean24.hands(marsJan6, 'airy').major, lmstFraction(marsJan6, 'airy'), 1e-6, 'mars 24 MTC')
+
+const curiosityLand = new Date(Date.UTC(2012, 7, 6, 5, 17, 57))
+const galeNoon = withHandAt(mean24, curiosityLand, 'major', 0.5, 'curiosity')
+closeTurn(mean24.hands(galeNoon, 'curiosity').major, 0.5, 1e-4, 'Gale local noon')
+
+for (const clock of marsClockDrivers) {
+  if (clock.id === 'mars-apparent-24') continue
+  const frame = clock.frameMs(curiosityLand, 'curiosity')
+  const utcHands = clock.hands(curiosityLand, 'curiosity')
+  for (const hand of handNames) {
+    const period = clock.periods[hand]
+    const position = utcHands[hand]
+    if (period === null || position === null) continue
+    closeTurn(position, fraction(frame / period), 1e-9, `${clock.id} ${hand} period`)
+    for (const target of [0, 0.125, 0.5, 0.87]) {
+      const moved = withHandAt(clock, curiosityLand, hand, target, 'curiosity')
+      const movedPosition = clock.hands(moved, 'curiosity')[hand]
+      assert.ok(movedPosition !== null)
+      closeTurn(movedPosition, target, 1e-4, `${clock.id} ${hand} round trip`)
+    }
+  }
+}
+
+const apparent = marsClockDrivers.find((item) => item.id === 'mars-apparent-24')
+assert.ok(apparent)
+assert.match(apparent.label(curiosityLand, undefined, 'curiosity'), /LTST$/)
+assert.ok(apparent.hands(curiosityLand, 'curiosity').major >= 0)
 
 console.log('clocks: ok')

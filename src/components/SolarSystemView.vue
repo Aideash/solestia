@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { PLANET_SYSTEM_BANDS, SOLAR_SYSTEM_BANDS } from '../data/orbitalBands.ts'
 import { PLANET_SYSTEMS, planetSystemFor, type ViewPlane } from '../data/planetSystems.ts'
+import { timePageFor } from '../data/timePages.ts'
 import { SELECTION_NOTES, primeMeridianLabel } from '../data/selectionNotes.ts'
 import {
   formatDayClock,
@@ -646,10 +647,15 @@ function onBodyClick(id: string, event: MouseEvent) {
   emit('select', id)
 }
 
-/** Only a planet with its own system page, or a modeled belt band, can be opened. */
+/** A planet with a system or time page, or a modeled belt band, can be opened. */
 function requestOpen(id: string) {
   if (isSatelliteSystem.value) return
-  if (id === 'asteroid-belt' || id === 'kuiper-belt' || planetSystemFor(id as PlanetState['id'])) {
+  if (
+    id === 'asteroid-belt' ||
+    id === 'kuiper-belt' ||
+    planetSystemFor(id as PlanetState['id']) ||
+    timePageFor(id)
+  ) {
     emit('open', id)
   }
 }

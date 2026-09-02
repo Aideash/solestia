@@ -32,6 +32,12 @@ export const router = createRouter({
       meta: { subtitle: 'Earth · time' },
     },
     {
+      path: '/mars/time',
+      name: 'mars-time',
+      component: () => import('./views/MarsTimePage.vue'),
+      meta: { subtitle: 'Mars · time' },
+    },
+    {
       path: '/jupiter',
       name: 'jupiter-system',
       component: PlanetSystemPage,
