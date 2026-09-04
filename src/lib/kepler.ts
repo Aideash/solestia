@@ -21,6 +21,8 @@ const JULIAN_YEAR_DAYS = 365.25
 /** Obliquity of the ecliptic at J2000, degrees. */
 const OBLIQUITY_J2000 = 23.43928
 export const KM_PER_AU = 149_597_870.7
+/** Earth mass divided by Moon mass, from the DE440 Earth–Moon mass ratio. */
+const EARTH_MOON_MASS_RATIO = 81.30056822
 
 export type Vec3 = { x: number; y: number; z: number }
 
@@ -629,9 +631,11 @@ export function bodyFrame(
     y: Math.cos(dec) * Math.sin(ra),
     z: Math.sin(dec),
   }
-  // ẑ × pole, which stays well defined for Earth's near-polar pole because the
-  // components shrink together and normalizing recovers the direction.
-  const node = normalize({ x: -pole.y, y: pole.x, z: 0 })
+  // IAU's node direction is defined by right ascension itself. Deriving it
+  // from ẑ × pole reverses it when a linear pole model carries declination
+  // just past 90°, as Earth's does before J2000, flipping every longitude by
+  // 180° at the epoch.
+  const node = { x: -Math.sin(ra), y: Math.cos(ra), z: 0 }
   const east = cross(pole, node)
   const w = degToRad(iau.w0 + iau.wDot * days)
   const primeMeridian = {
@@ -942,6 +946,68 @@ function evaluateSatellite(satellite: Satellite, days: number) {
 }
 
 /**
+ * Principal lunar inequalities omitted by the precessing mean ellipse.
+ *
+ * The position is evaluated as one compact series rather than perturbing the
+ * ellipse's Cartesian result, which would duplicate its equation-of-center
+ * and latitude terms. The mean ellipse remains the orbit shown by the orrery;
+ * these terms move the instantaneous Moon around that reference path.
+ */
+function correctedLunarPosition(M: number, Omega: number, varpi: number, earth: PlanetState): Vec3 {
+  const meanLongitude = M + varpi
+  const solarMeanAnomaly = earth.meanAnomaly
+  const solarMeanLongitude = solarMeanAnomaly + earth.perihelionLongitude + Math.PI
+  const elongation = meanLongitude - solarMeanLongitude
+  const argumentOfLatitude = M + varpi - Omega
+  const sinDeg = (coefficient: number, angle: number) => coefficient * Math.sin(angle)
+
+  const longitudeCorrectionDeg =
+    sinDeg(6.289, M) +
+    sinDeg(1.274, 2 * elongation - M) +
+    sinDeg(0.658, 2 * elongation) +
+    sinDeg(0.214, 2 * M) -
+    sinDeg(0.186, solarMeanAnomaly) -
+    sinDeg(0.114, 2 * argumentOfLatitude) +
+    sinDeg(0.059, 2 * elongation - 2 * M) +
+    sinDeg(0.057, 2 * elongation - solarMeanAnomaly - M) +
+    sinDeg(0.053, 2 * elongation + M) +
+    sinDeg(0.046, 2 * elongation - solarMeanAnomaly) +
+    sinDeg(0.041, M - solarMeanAnomaly) -
+    sinDeg(0.035, elongation) -
+    sinDeg(0.031, solarMeanAnomaly + M) -
+    sinDeg(0.03, 2 * elongation - 2 * argumentOfLatitude) +
+    sinDeg(0.015, M + 2 * argumentOfLatitude) -
+    sinDeg(0.013, M - 2 * argumentOfLatitude) +
+    sinDeg(0.011, 4 * elongation - M)
+
+  const latitudeDeg =
+    sinDeg(5.128, argumentOfLatitude) +
+    sinDeg(0.28, M + argumentOfLatitude) +
+    sinDeg(0.277, M - argumentOfLatitude) +
+    sinDeg(0.173, 2 * elongation - argumentOfLatitude) +
+    sinDeg(0.055, 2 * elongation + argumentOfLatitude - M) +
+    sinDeg(0.046, 2 * elongation - argumentOfLatitude - M) +
+    sinDeg(0.033, 2 * elongation + argumentOfLatitude) +
+    sinDeg(0.017, 2 * M + argumentOfLatitude)
+
+  const radiusKm =
+    385000.56 -
+    20905.36 * Math.cos(M) -
+    3699.11 * Math.cos(2 * elongation - M) -
+    2955.97 * Math.cos(2 * elongation) -
+    569.93 * Math.cos(2 * M)
+  const radius = radiusKm / KM_PER_AU
+  const longitude = meanLongitude + degToRad(longitudeCorrectionDeg)
+  const latitude = degToRad(latitudeDeg)
+  const cosLatitude = Math.cos(latitude)
+  return {
+    x: radius * cosLatitude * Math.cos(longitude),
+    y: radius * cosLatitude * Math.sin(longitude),
+    z: radius * Math.sin(latitude),
+  }
+}
+
+/**
  * Laplace-plane orbital coordinates to ecliptic-of-J2000. The Laplace x-axis
  * is the ascending node of that plane on the ICRF equator.
  */
@@ -1017,11 +1083,13 @@ function satelliteState(
   const E = eccentricAnomaly(meanAnomaly, e)
   const nu = trueAnomalyFromE(E, e)
   const inLaplace = heliocentricEcliptic(a, e, E, i, Omega, varpi)
-  const relative = laplaceToEcliptic(
+  const meanRelative = laplaceToEcliptic(
     inLaplace,
     satellite.elements.laplaceRa,
     satellite.elements.laplaceDec,
   )
+  const relative =
+    satellite.id === 'moon' ? correctedLunarPosition(M, Omega, varpi, parent) : meanRelative
   const periLaplace = heliocentricEcliptic(a, e, 0, i, Omega, varpi)
   const peri = laplaceToEcliptic(
     periLaplace,
@@ -1107,9 +1175,9 @@ function satelliteState(
 export function planetSystemAt(date: Date, systemId: PlanetSystemId): PlanetSystemSnapshot {
   const solar = solarSystemAt(date, 'iau')
   const system = PLANET_SYSTEMS[systemId]
-  const parent = solar.planets.find((planet) => planet.id === system.id)
+  const barycentricParent = solar.planets.find((planet) => planet.id === system.id)
   const parentBody = PLANETS.find((planet) => planet.id === system.id)
-  if (!parent || !parentBody) {
+  if (!barycentricParent || !parentBody) {
     throw new Error(`${system.name} orbital elements are missing`)
   }
   const t = centuriesSinceJ2000(date)
@@ -1117,8 +1185,40 @@ export function planetSystemAt(date: Date, systemId: PlanetSystemId): PlanetSyst
   const parentIau = frameFor(parentBody, 'iau')
   const equator = parentEquatorFrame(parentIau, days)
   const equatorOrigin = equatorOriginAzimuth(solar.earthPerihelionLongitude, equator)
+  const satelliteBodies = MOONS.filter((satellite) => satellite.parent === system.id)
+  let parent = barycentricParent
+  let satellites = satelliteBodies.map((satellite) =>
+    satelliteState(satellite, t, parent, solar.earthPerihelionLongitude, equator),
+  )
+
+  // The planetary table locates the Earth–Moon barycenter, while lunar
+  // elements are geocentric. Recover both body centers before using their line
+  // to place an eclipse shadow.
+  if (systemId === 'earth') {
+    const moon = satellites.find((satellite) => satellite.id === 'moon')
+    if (moon) {
+      const moonFromEarth = {
+        x: moon.position.x - parent.position.x,
+        y: moon.position.y - parent.position.y,
+        z: moon.position.z - parent.position.z,
+      }
+      const earthFromBarycenter = {
+        x: -moonFromEarth.x / (EARTH_MOON_MASS_RATIO + 1),
+        y: -moonFromEarth.y / (EARTH_MOON_MASS_RATIO + 1),
+        z: -moonFromEarth.z / (EARTH_MOON_MASS_RATIO + 1),
+      }
+      parent = {
+        ...parent,
+        position: addVec(parent.position, earthFromBarycenter),
+      }
+      satellites = satellites.map((satellite) => ({
+        ...satellite,
+        position: addVec(satellite.position, earthFromBarycenter),
+      }))
+    }
+  }
+
   const towardSun = { x: -parent.position.x, y: -parent.position.y, z: -parent.position.z }
-  const satellites = MOONS.filter((satellite) => satellite.parent === system.id)
   return {
     at: date,
     earthPerihelionLongitude: solar.earthPerihelionLongitude,
@@ -1128,9 +1228,7 @@ export function planetSystemAt(date: Date, systemId: PlanetSystemId): PlanetSyst
     parentEquatorFacing: projectIcrfOntoEquator(bodyFrame(parentIau, days).primeMeridian, equator),
     system: system.id,
     parent,
-    satellites: satellites.map((satellite) =>
-      satelliteState(satellite, t, parent, solar.earthPerihelionLongitude, equator),
-    ),
+    satellites,
   }
 }
 

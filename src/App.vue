@@ -63,7 +63,7 @@ function onAppKeydown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
-  if (route.name === 'earth-time') {
+  if (route.name === 'earth-time' || route.name === 'earth-eclipse') {
     void router.push({ name: 'earth-system' })
     event.preventDefault()
     return

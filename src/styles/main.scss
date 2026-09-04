@@ -8,6 +8,9 @@
   --text: #e8edf7;
   --text-dim: #8b97b5;
   --accent: #f5c542;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
   --font-family: system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   color-scheme: dark;
@@ -35,4 +38,16 @@ body {
   background: $color-bg;
   color: $color-text;
   font-family: $font-sans;
+}
+
+.green {
+  color: var(--green);
+}
+
+.amber {
+  color: var(--amber);
+}
+
+.red {
+  color: var(--red);
 }

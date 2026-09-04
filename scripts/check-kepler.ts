@@ -451,8 +451,8 @@ const moon = earthSystem.satellites[0]
 assert(moon?.id === 'moon', 'Moon missing from Earth system')
 assert(moon.aKm === 384400, `Moon a should be 384400 km, got ${moon.aKm}`)
 assert(
-  Math.abs(moon.siderealOrbitDays - 27.322) < 0.001,
-  `Moon sidereal month should be ~27.322 d, got ${moon.siderealOrbitDays}`,
+  Math.abs(moon.siderealOrbitDays - 27.32166155) < 1e-8,
+  `Moon sidereal month should retain its unrounded rate, got ${moon.siderealOrbitDays}`,
 )
 assert(
   moon.parentDayDays === Number.POSITIVE_INFINITY,

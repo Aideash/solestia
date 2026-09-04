@@ -123,14 +123,18 @@ export const MOONS: Satellite[] = [
     elements: {
       aKm: 384400,
       e: 0.0554,
-      omega0: 318.15,
-      M0: 135.27,
+      // Unrounded J2000 mean arguments and rates from the compact lunar
+      // theory used for the principal inequalities in lib/kepler.ts.
+      omega0: 318.3085034,
+      M0: 134.9633964,
       i0: 5.16,
-      Omega0: 125.08,
-      periodDays: 27.322,
+      Omega0: 125.0445479,
+      // Match the IAU lunar sidereal rate used by the orientation model.
+      // Rounding this to 27.322 d leaves the mean Moon about 1.5° late by 2024.
+      periodDays: 27.32166155,
       periodIsSidereal: true,
-      periapsisPeriodYears: 5.997,
-      nodePeriodYears: 18.6,
+      periapsisPeriodYears: 5.99685127,
+      nodePeriodYears: 18.61295774,
       apsisDirection: 1,
       nodeDirection: -1,
       // The lunar elements are referred directly to the J2000 ecliptic.

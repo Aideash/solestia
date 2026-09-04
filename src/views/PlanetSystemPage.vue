@@ -75,9 +75,14 @@ function toggleSatellite(id: string) {
       />
     </template>
     <template #controls>
-      <RouterLink v-if="timePage" class="forward" :to="{ name: timePage.routeName }">
-        Date and time →
-      </RouterLink>
+      <div v-if="systemId === 'earth' || timePage" class="forwards">
+        <RouterLink v-if="systemId === 'earth'" class="forward" :to="{ name: 'earth-eclipse' }">
+          Eclipses →
+        </RouterLink>
+        <RouterLink v-if="timePage" class="forward" :to="{ name: timePage.routeName }">
+          Date and time →
+        </RouterLink>
+      </div>
       <button
         type="button"
         class="frame-toggle"
@@ -134,6 +139,17 @@ function toggleSatellite(id: string) {
 .frame-toggle__mode {
   font-family: $font-mono;
   font-size: 0.8125rem;
+}
+
+.forwards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.forwards .forward {
+  margin-top: 0;
 }
 
 .back,
