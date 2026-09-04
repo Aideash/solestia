@@ -18,8 +18,9 @@ import {
 import {
   R_EARTH_KM,
   R_MOON_KM,
+  R_SUN_KM,
   activeCone,
-  coneRing,
+  // coneRing,
   envelopeHitSamples,
   envelopeMoonPositions,
   type EclipseGeometry,
@@ -93,29 +94,33 @@ const orbit = computed(() => {
 
 const cone = computed(() => activeCone(props.geometry, props.caster))
 
-function ringPath(centerHelio: Vec3, radiusKm: number, samples = 48): string {
-  const points = coneRing(
-    earthCentered(centerHelio),
-    cone.value.axis,
-    radiusKm / KM_PER_AU,
-    samples,
-  ).map(project)
-  if (points.length < 2) return ''
-  return `${points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')} Z`
-}
-
-const umbraPath = computed(() => {
-  if (cone.value.hit.kind === 'miss') return ''
-  const radius = Math.abs(cone.value.hit.umbraRadiusKm)
-  if (!(radius > 0) || cone.value.hit.alongKm <= 0) return ''
-  return ringPath(cone.value.target, radius)
-})
-const penumbraPath = computed(() => {
-  if (cone.value.hit.kind === 'miss') return ''
-  const radius = cone.value.hit.penumbraRadiusKm
-  if (!(radius > 0) || cone.value.hit.alongKm <= 0) return ''
-  return ringPath(cone.value.target, radius)
-})
+// ------------------------------------------------------------
+// To small to see, disabled for now
+//
+// function ringPath(centerHelio: Vec3, radiusKm: number, samples = 48): string {
+//   const points = coneRing(
+//     earthCentered(centerHelio),
+//     cone.value.axis,
+//     radiusKm / KM_PER_AU,
+//     samples,
+//   ).map(project)
+//   if (points.length < 2) return ''
+//   return `${points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')} Z`
+// }
+//
+// const umbraPath = computed(() => {
+//   if (cone.value.hit.kind === 'miss') return ''
+//   const radius = Math.abs(cone.value.hit.umbraRadiusKm)
+//   if (!(radius > 0) || cone.value.hit.alongKm <= 0) return ''
+//   return ringPath(cone.value.target, radius)
+// })
+// const penumbraPath = computed(() => {
+//   if (cone.value.hit.kind === 'miss') return ''
+//   const radius = cone.value.hit.penumbraRadiusKm
+//   if (!(radius > 0) || cone.value.hit.alongKm <= 0) return ''
+//   return ringPath(cone.value.target, radius)
+// })
+// ------------------------------------------------------------
 
 const umbraApex = computed(() => project(earthCentered(cone.value.umbraApex)))
 const casterPt = computed(() =>
@@ -132,6 +137,8 @@ const envelopeArc = computed(() => {
   )
   return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
 })
+
+const moonDepth = computed(() => vecDot(props.geometry.moonRelative, cameraAxes(pose.value).look))
 
 const sunMarker = computed(() => {
   const unit = vecNormalize(props.geometry.sunFromEarth)
@@ -195,15 +202,23 @@ const sunRayView = computed(() => {
   return { rays, dashLength }
 })
 
-const inset = computed(() => {
-  const s = props.geometry.sunApparent
-  const m = props.geometry.moonApparent
-  const max = Math.max(s, m)
-  return {
-    sunR: 3.2 * (s / max),
-    moonR: 3.2 * (m / max),
-  }
-})
+const insetX = 14
+const insetY = 12
+const insetCaptionY = 20.5
+const insetMeanDiscSize = 4.5
+/**
+ * One absolute scale for both discs, pinned so the mean Sun draws at radius
+ * 4.5. Concentric on a shared scale, the Sun's 3.4% yearly swing and the
+ * Moon's wider monthly one each read as a rim of one disc past the other, and
+ * equal angular radii genuinely coincide. A perigee Moon is the widest case
+ * and still clears the caption.
+ */
+const insetScale = insetMeanDiscSize / Math.asin(R_SUN_KM / KM_PER_AU)
+
+const inset = computed(() => ({
+  sunR: insetScale * props.geometry.sunApparent,
+  moonR: insetScale * props.geometry.moonApparent,
+}))
 
 function toggleSettings() {
   settingsOpen.value = !settingsOpen.value
@@ -478,19 +493,35 @@ const switches = computed(() => [
       <g class="orbit-far" aria-hidden="true">
         <path v-for="(d, index) in orbit.far" :key="`far-${index}`" class="orbit" :d="d" />
       </g>
-      <path v-if="penumbraPath" class="penumbra" :d="penumbraPath" />
-      <path v-if="umbraPath" class="umbra" :d="umbraPath" />
       <path v-if="envelopeArc" class="envelope" :d="envelopeArc" />
       <line class="axis" :x1="umbraApex.x" :y1="umbraApex.y" :x2="casterPt.x" :y2="casterPt.y" />
+      <circle
+        v-if="moonDepth > 0"
+        class="moon"
+        :cx="moonPt.x"
+        :cy="moonPt.y"
+        :r="Math.max(moonR, 0.45)"
+      />
       <circle class="earth" :cx="earthPt.x" :cy="earthPt.y" :r="Math.max(earthR, 0.7)" />
       <g class="orbit-near" aria-hidden="true">
         <path v-for="(d, index) in orbit.near" :key="`near-${index}`" class="orbit" :d="d" />
       </g>
-      <circle class="moon" :cx="moonPt.x" :cy="moonPt.y" :r="Math.max(moonR, 0.45)" />
+      <circle
+        v-if="moonDepth <= 0"
+        class="moon"
+        :cx="moonPt.x"
+        :cy="moonPt.y"
+        :r="Math.max(moonR, 0.45)"
+      />
+      <!-- <path v-if="penumbraPath" class="penumbra" :d="penumbraPath" />
+      <path v-if="umbraPath" class="umbra" :d="umbraPath" /> -->
       <g class="inset" aria-hidden="true">
-        <circle class="inset-sun" cx="10" cy="12" :r="inset.sunR" />
-        <circle class="inset-moon" cx="18" cy="12" :r="inset.moonR" />
-        <text x="14" y="19" text-anchor="middle">apparent size</text>
+        <circle class="inset-sun" :cx="insetX - 8" :cy="insetY" :r="inset.sunR / 2" />
+        <circle class="inset-sun" :cx="insetX" :cy="insetY" :r="inset.sunR" />
+        <circle class="inset-moon" :cx="insetX" :cy="insetY" :r="inset.moonR" />
+        <circle class="inset-moon" :cx="insetX + 8" :cy="insetY" :r="inset.moonR / 2" />
+        <circle class="inset-block" :cx="insetX" :cy="insetY" :r="insetMeanDiscSize" />
+        <text :x="insetX" :y="insetCaptionY" text-anchor="middle">apparent size</text>
       </g>
     </svg>
   </div>
@@ -729,6 +760,8 @@ const switches = computed(() => [
 
 .inset-sun {
   fill: #f5c542;
+  stroke: #f5c542;
+  stroke-width: 0.25;
 }
 
 .sun-marker circle {
@@ -743,8 +776,13 @@ const switches = computed(() => [
 
 .inset-moon {
   fill: #c9c9c4;
-  stroke: var(--border);
-  stroke-width: 0.15;
+  stroke: #c9c9c4;
+  stroke-width: 0.25;
+}
+
+.inset-block {
+  fill: #000;
+  stroke: none;
 }
 
 .inset text {

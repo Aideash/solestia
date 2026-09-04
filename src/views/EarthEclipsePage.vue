@@ -160,14 +160,18 @@ const envelopeDeg = ((LUNAR_LONGITUDE_ENVELOPE_RAD * 180) / Math.PI).toFixed(1)
           Earth (lunar, shadow on the Moon). On the disc each is drawn where its cone actually meets
           the surface, so a total solar umbra is a spot a couple of hundred kilometers across that
           sweeps as the epoch advances, and a shadow past its apex is dashed: an annular antumbra.
-          Apparent sizes are the angular radii seen from Earth. The Moon’s maria are ellipses
-          bracketing each one’s coordinates in the IAU gazetteer, there to show which way the near
-          side is facing, not to map where the basalt ends. Drag the geometry view to orbit an
-          orthographic camera on a spherical shell; both discs share that look. Double-click or
-          Reset camera returns to the edge-on pose (look along Earth’s perihelion, ecliptic north
-          up). Sidereal keeps the camera fixed against the stars; Solar carries it around with the
-          Sun so the rays stay fixed as the epoch changes. Normal drag carries the near side of the
-          system with the pointer; inverted drag moves the camera instead.
+          Apparent sizes are the angular radii seen from Earth. The corner overlay stacks both discs
+          on one absolute scale and covers a mean Sun in black, so the rim that remains is whichever
+          body is larger at this epoch; the Sun’s stroke still clears that mask all year, and you
+          can watch it breathe. Half-size copies to either side let each disc be watched on its own
+          as the epoch moves. The Moon’s maria are ellipses bracketing each one’s coordinates in the
+          IAU gazetteer, there to show which way the near side is facing, not to map where the
+          basalt ends. Drag the geometry view to orbit an orthographic camera on a spherical shell;
+          both discs share that look. Double-click or Reset camera returns to the edge-on pose (look
+          along Earth’s perihelion, ecliptic north up). Sidereal keeps the camera fixed against the
+          stars; Solar carries it around with the Sun so the rays stay fixed as the epoch changes.
+          Normal drag carries the near side of the system with the pointer; inverted drag moves the
+          camera instead.
         </p>
         <p>
           The optional red envelope is currently a conservative ±{{ envelopeDeg }}° of residual
