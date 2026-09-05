@@ -22,7 +22,7 @@ const JULIAN_YEAR_DAYS = 365.25
 const OBLIQUITY_J2000 = 23.43928
 export const KM_PER_AU = 149_597_870.7
 /** Earth mass divided by Moon mass, from the DE440 Earth–Moon mass ratio. */
-const EARTH_MOON_MASS_RATIO = 81.30056822
+export const EARTH_MOON_MASS_RATIO = 81.30056822
 
 export type Vec3 = { x: number; y: number; z: number }
 

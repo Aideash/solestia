@@ -79,6 +79,9 @@ function toggleSatellite(id: string) {
         <RouterLink v-if="systemId === 'earth'" class="forward" :to="{ name: 'earth-eclipse' }">
           Eclipses →
         </RouterLink>
+        <RouterLink v-if="systemId === 'earth'" class="forward" :to="{ name: 'earth-fields' }">
+          Fields →
+        </RouterLink>
         <RouterLink v-if="timePage" class="forward" :to="{ name: timePage.routeName }">
           Date and time →
         </RouterLink>
@@ -144,6 +147,7 @@ function toggleSatellite(id: string) {
 .forwards {
   display: flex;
   flex-wrap: wrap;
+  flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.5rem;
 }

@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ELEMENTS_VALID_FROM_MS, ELEMENTS_VALID_TO_MS } from '../data/planets.ts'
-import { clampEpoch, clampEpochMs } from '../lib/kepler.ts'
 
-const props = defineProps<{
-  at: Date
-  live: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    at: Date
+    live: boolean
+    fromMs?: number
+    toMs?: number
+  }>(),
+  {
+    fromMs: ELEMENTS_VALID_FROM_MS,
+    toMs: ELEMENTS_VALID_TO_MS,
+  },
+)
 
 const emit = defineEmits<{
   change: [at: Date]
@@ -42,8 +49,8 @@ const dragging = ref(false)
 const didScrub = ref(false)
 const expanded = ref(false)
 
-const rangeSpan = ELEMENTS_VALID_TO_MS - ELEMENTS_VALID_FROM_MS
-const rangeValue = computed(() => clampEpochMs(props.at.getTime()) - ELEMENTS_VALID_FROM_MS)
+const rangeSpan = computed(() => props.toMs - props.fromMs)
+const rangeValue = computed(() => clampMs(props.at.getTime()) - props.fromMs)
 
 const display = computed(() => formatClock(props.at))
 const tzHours = computed(() => -props.at.getTimezoneOffset() / 60)
@@ -51,8 +58,8 @@ const tzHours = computed(() => -props.at.getTimezoneOffset() / 60)
 const nowMarkPct = computed(() => {
   void props.at
   void props.live
-  const t = clampEpochMs(Date.now())
-  return ((t - ELEMENTS_VALID_FROM_MS) / rangeSpan) * 100
+  const t = clampMs(Date.now())
+  return ((t - props.fromMs) / rangeSpan.value) * 100
 })
 
 function scrubMsPerPixel(event: {
@@ -67,8 +74,13 @@ function scrubMsPerPixel(event: {
   return MS_PER_HOUR
 }
 
+function clampMs(ms: number): number {
+  return Math.min(props.toMs, Math.max(props.fromMs, ms))
+}
+
 function commitDate(date: Date) {
-  emit('change', clampEpoch(date))
+  const ms = clampMs(date.getTime())
+  emit('change', ms === date.getTime() ? date : new Date(ms))
 }
 
 function parseDraft(raw: string): Date | 'live' | null {
@@ -155,7 +167,7 @@ function onPointerMove(event: PointerEvent) {
   }
   const dx = event.clientX - lastX
   lastX = event.clientX
-  scrubMs = clampEpochMs(scrubMs + dx * scrubMsPerPixel(event))
+  scrubMs = clampMs(scrubMs + dx * scrubMsPerPixel(event))
   commitDate(new Date(scrubMs))
 }
 
@@ -174,7 +186,7 @@ function onWheel(event: WheelEvent) {
 
 function onRangeInput(event: Event) {
   const value = Number((event.target as HTMLInputElement).value)
-  commitDate(new Date(ELEMENTS_VALID_FROM_MS + value))
+  commitDate(new Date(props.fromMs + value))
 }
 
 onMounted(() => {
@@ -256,7 +268,7 @@ watch(
               :step="MS_PER_DAY"
               :value="rangeValue"
               :aria-valuetext="display"
-              aria-label="Date across the 1800 to 2050 validity window"
+              :aria-label="`Date from ${new Date(fromMs).toISOString().slice(0, 10)} to ${new Date(toMs).toISOString().slice(0, 10)}`"
               @input="onRangeInput"
             />
           </div>

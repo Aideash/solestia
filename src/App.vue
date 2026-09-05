@@ -3,7 +3,9 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import EpochField from './components/EpochField.vue'
 import { epochKey } from './epoch.ts'
+import { ELEMENTS_VALID_FROM_MS, ELEMENTS_VALID_TO_MS } from './data/planets.ts'
 import { clampEpoch } from './lib/kepler.ts'
+import { solarWindBounds } from './lib/solarWind.ts'
 
 const live = ref(true)
 const viewed = ref(new Date())
@@ -18,11 +20,15 @@ const subtitle = computed(() =>
   typeof route.meta.subtitle === 'string' ? route.meta.subtitle : null,
 )
 const isDetailView = computed(() => route.name !== 'solar')
+const epochRange = computed(() => {
+  if (route.name === 'earth-fields') return solarWindBounds()
+  return { fromMs: ELEMENTS_VALID_FROM_MS, toMs: ELEMENTS_VALID_TO_MS }
+})
 
 function startLiveClock() {
   window.clearInterval(timer)
   timer = window.setInterval(() => {
-    viewed.value = clampEpoch(new Date())
+    viewed.value = clampViewed(new Date())
   }, 1000)
 }
 
@@ -31,14 +37,24 @@ function stopLiveClock() {
   timer = 0
 }
 
+function clampToRange(date: Date, fromMs: number, toMs: number): Date {
+  const ms = Math.min(toMs, Math.max(fromMs, date.getTime()))
+  return ms === date.getTime() ? date : new Date(ms)
+}
+
+function clampViewed(date: Date): Date {
+  const planetary = clampEpoch(date)
+  return clampToRange(planetary, epochRange.value.fromMs, epochRange.value.toMs)
+}
+
 function goLive() {
   live.value = true
-  viewed.value = clampEpoch(new Date())
+  viewed.value = clampViewed(new Date())
 }
 
 function setViewed(at: Date) {
   live.value = false
-  viewed.value = clampEpoch(at)
+  viewed.value = clampViewed(at)
 }
 
 watch(live, (isLive) => {
@@ -50,6 +66,7 @@ watch(
   () => route.name,
   () => {
     selectedId.value = null
+    viewed.value = clampViewed(viewed.value)
   },
 )
 
@@ -63,7 +80,11 @@ function onAppKeydown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
-  if (route.name === 'earth-time' || route.name === 'earth-eclipse') {
+  if (
+    route.name === 'earth-time' ||
+    route.name === 'earth-eclipse' ||
+    route.name === 'earth-fields'
+  ) {
     void router.push({ name: 'earth-system' })
     event.preventDefault()
     return
@@ -97,7 +118,14 @@ onUnmounted(() => {
         <RouterLink class="app__title" to="/">Solestia</RouterLink>
         <span v-if="subtitle" class="app__subtitle">{{ subtitle }}</span>
       </h1>
-      <EpochField :at="viewed" :live="live" @change="setViewed" @live="goLive" />
+      <EpochField
+        :at="viewed"
+        :live="live"
+        :from-ms="epochRange.fromMs"
+        :to-ms="epochRange.toMs"
+        @change="setViewed"
+        @live="goLive"
+      />
     </header>
     <RouterView />
   </div>

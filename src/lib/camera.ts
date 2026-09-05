@@ -81,6 +81,49 @@ export function shellPose(camera: ShellCamera): CameraPose {
 }
 
 /**
+ * Default gravity look in the Earth–Moon synodic frame: slightly off the
+ * Earth–Moon line, from south of the orbital plane.
+ */
+export const GRAVITY_SYNODIC_CAMERA: ShellCamera = { longitude: 0.35, latitude: -0.92 }
+
+/** Physical Sun marker radius as a multiple of the current Earth–Moon separation. */
+export const SUN_MARKER_SEPARATION = 1.48
+
+export function shellCameraFromLook(look: Vec3): ShellCamera {
+  const n = vecNormalize(look)
+  return {
+    longitude: Math.atan2(n.y, n.x),
+    latitude: Math.asin(Math.min(1, Math.max(-1, n.z))),
+  }
+}
+
+/**
+ * Rotate the synodic gravity default into ecliptic axes so the Moon keeps
+ * the same screen angle while the scene stays Earth-centered ecliptic.
+ */
+export function gravityCameraFromBasis(basis: { x: Vec3; y: Vec3; z: Vec3 }): ShellCamera {
+  const syn = shellLook(GRAVITY_SYNODIC_CAMERA)
+  return shellCameraFromLook({
+    x: basis.x.x * syn.x + basis.y.x * syn.y + basis.z.x * syn.z,
+    y: basis.x.y * syn.x + basis.y.y * syn.y + basis.z.y * syn.z,
+    z: basis.x.z * syn.x + basis.y.z * syn.y + basis.z.z * syn.z,
+  })
+}
+
+export function sunMarkerKm(sunFromEarth: Vec3, separationKm: number): Vec3 {
+  return vecScale(vecNormalize(sunFromEarth), SUN_MARKER_SEPARATION * separationKm)
+}
+
+/**
+ * Orthographic camera on a shell of radius `shellRadius` looking toward the
+ * origin. A point is behind that camera when its look-axis depth is nearer
+ * than `-shellRadius`.
+ */
+export function isBehindCameraShell(position: Vec3, look: Vec3, shellRadius: number): boolean {
+  return vecDot(position, look) < -shellRadius
+}
+
+/**
  * Apply a pointer drag, given as radians of screen sweep to the right and
  * down. The camera swings against the drag on both axes, so the near side of
  * the scene is what tracks the pointer.
@@ -135,4 +178,34 @@ export function linearDistanceScale(
   if (maxDistance <= 0) return () => 0
   const k = outerR / maxDistance
   return (distance) => distance * k
+}
+
+/** World point on the camera plane through the origin for an orthographic pixel. */
+export function orthographicRay(
+  sx: number,
+  sy: number,
+  cx: number,
+  cy: number,
+  pose: CameraPose,
+  worldPerScreen: number,
+): { origin: Vec3; dir: Vec3 } {
+  const { look, right, up } = cameraAxes(pose)
+  const origin = vecAdd(
+    vecScale(right, (sx - cx) * worldPerScreen),
+    vecScale(up, (cy - sy) * worldPerScreen),
+  )
+  return { origin, dir: look }
+}
+
+/** Ray–plane intersection. Null when the ray is parallel to the plane. */
+export function intersectRayPlane(
+  origin: Vec3,
+  dir: Vec3,
+  planePoint: Vec3,
+  planeNormal: Vec3,
+): Vec3 | null {
+  const denom = vecDot(dir, planeNormal)
+  if (Math.abs(denom) < 0.12) return null
+  const t = vecDot(vecSub(planePoint, origin), planeNormal) / denom
+  return vecAdd(origin, vecScale(dir, t))
 }

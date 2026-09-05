@@ -64,7 +64,7 @@ $flanked-width: 78rem;
   direction: rtl;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
   margin-top: $spacing-md;
 
   > * {

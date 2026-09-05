@@ -38,6 +38,12 @@ export const router = createRouter({
       meta: { subtitle: 'Earth · eclipse' },
     },
     {
+      path: '/earth/fields',
+      name: 'earth-fields',
+      component: () => import('./views/EarthFieldsPage.vue'),
+      meta: { subtitle: 'Earth · fields' },
+    },
+    {
       path: '/mars/time',
       name: 'mars-time',
       component: () => import('./views/MarsTimePage.vue'),
