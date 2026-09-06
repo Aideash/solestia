@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
-import { epochKey } from '../epoch.ts'
+import { epochKey, SI_SECOND_CADENCE } from '../epoch.ts'
 import { calendarDrivers } from '../lib/calendars.ts'
 import { clockDrivers } from '../lib/clocks.ts'
 import { clampEpoch, planetSystemAt } from '../lib/kepler.ts'
@@ -74,6 +74,23 @@ watch(timeZoneId, (id) => {
   } catch {
     // Private mode or quota — the picker still works for the session.
   }
+})
+
+/**
+ * The live clock beats in whatever unit is on the dial, so a decimal second or a
+ * kastha is something you can watch pass. Other pages have no such clock, so the
+ * cadence goes back to an SI second on the way out.
+ */
+watch(
+  [clock, timeZoneId],
+  ([driver, zone]) => {
+    epoch.cadence.value = { tickMs: driver.tickMs, frameMs: (at) => driver.frameMs(at, zone) }
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  epoch.cadence.value = SI_SECOND_CADENCE
 })
 
 function toggleNamesMode() {

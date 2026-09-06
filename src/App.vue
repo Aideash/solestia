@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import EpochField from './components/EpochField.vue'
-import { epochKey } from './epoch.ts'
+import { epochKey, SI_SECOND_CADENCE, type LiveCadence } from './epoch.ts'
 import { ELEMENTS_VALID_FROM_MS, ELEMENTS_VALID_TO_MS } from './data/planets.ts'
 import { clampEpoch } from './lib/kepler.ts'
 import { solarWindBounds } from './lib/solarWind.ts'
@@ -10,9 +10,10 @@ import { solarWindBounds } from './lib/solarWind.ts'
 const live = ref(true)
 const viewed = ref(new Date())
 const selectedId = ref<string | null>(null)
+const cadence = ref<LiveCadence>(SI_SECOND_CADENCE)
 let timer = 0
 
-provide(epochKey, { viewed, live, selectedId })
+provide(epochKey, { viewed, live, selectedId, cadence })
 
 const route = useRoute()
 const router = useRouter()
@@ -25,15 +26,30 @@ const epochRange = computed(() => {
   return { fromMs: ELEMENTS_VALID_FROM_MS, toMs: ELEMENTS_VALID_TO_MS }
 })
 
-function startLiveClock() {
-  window.clearInterval(timer)
-  timer = window.setInterval(() => {
+/**
+ * Waits out whatever is left of the current tick rather than a fixed interval,
+ * so the step lands on the boundary of the unit being shown and the wait cannot
+ * drift. The elapsed reading comes from the clock's own frame, which is what
+ * puts a decimal second or a kastha on its mark instead of near it.
+ */
+function scheduleTick() {
+  const { tickMs, frameMs } = cadence.value
+  const now = new Date()
+  const elapsed = frameMs ? frameMs(now) : now.getTime()
+  const remaining = tickMs - (((elapsed % tickMs) + tickMs) % tickMs)
+  timer = window.setTimeout(() => {
     viewed.value = clampViewed(new Date())
-  }, 1000)
+    scheduleTick()
+  }, remaining)
+}
+
+function startLiveClock() {
+  stopLiveClock()
+  scheduleTick()
 }
 
 function stopLiveClock() {
-  window.clearInterval(timer)
+  window.clearTimeout(timer)
   timer = 0
 }
 
@@ -60,6 +76,10 @@ function setViewed(at: Date) {
 watch(live, (isLive) => {
   if (isLive) startLiveClock()
   else stopLiveClock()
+})
+
+watch(cadence, () => {
+  if (live.value) startLiveClock()
 })
 
 watch(

@@ -9,4 +9,7 @@ dist
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea
+
 .cursor/*
+.playwright-mcp/*
+docs/*

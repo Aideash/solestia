@@ -235,6 +235,9 @@ function lsMonth(ls: number): number {
   return Math.min(12, Math.floor(wrapUnit(ls / 360) * 12) + 1)
 }
 
+type ClancyMonth = { year: number; month: number; first: number; last: number }
+
+/** Sols spanned by an Ls month; `first` inclusive, `last` exclusive. */
 function clancyMonthSolRange(
   year: number,
   month: number,
@@ -248,23 +251,44 @@ function clancyMonthSolRange(
   return { first, last }
 }
 
+function clancyMonthFromIndex(index: number, siteId?: string): ClancyMonth {
+  const year = Math.floor(index / 12)
+  const month = index - year * 12 + 1
+  return { year, month, ...clancyMonthSolRange(year, month, siteId) }
+}
+
+/**
+ * The Ls month that owns a whole sol. Boundaries fall mid-sol, so resolving
+ * membership from the instantaneous Ls would split a sol between two months
+ * and leave the grid's first cell disowned; the sol containing a crossing is
+ * day 1 of the month it opens.
+ */
+function clancyMonthOfSol(sol: number, siteId?: string): ClancyMonth {
+  const noon = dateFromLocalMsd(sol + 0.5, siteId)
+  let index = clancyMarsYear(noon) * 12 + lsMonth(solarLongitude(noon)) - 1
+  let current = clancyMonthFromIndex(index, siteId)
+  for (let step = 0; step < 3 && (sol < current.first || sol >= current.last); step++) {
+    index += sol < current.first ? -1 : 1
+    current = clancyMonthFromIndex(index, siteId)
+  }
+  return current
+}
+
 function makeClancyDriver(): CalendarDriver {
   return {
     id: 'clancy',
     name: 'Mars Year (Ls)',
     dateParts(instant, siteId) {
-      const ls = solarLongitude(instant)
-      const year = clancyMarsYear(instant)
-      const month = lsMonth(ls)
-      const { first } = clancyMonthSolRange(year, month, siteId)
-      const day = Math.floor(localMsd(instant, siteId)) - first + 1
+      const sol = Math.floor(localMsd(instant, siteId))
+      const { year, month, first } = clancyMonthOfSol(sol, siteId)
+      const day = sol - first + 1
       const monthCode = `Ls${String((month - 1) * 30).padStart(3, '0')}`
       return {
         year,
         month,
         monthCode,
-        day: Math.max(1, day),
-        key: `clancy-${year}-${monthCode}-${Math.max(1, day)}`,
+        day,
+        key: `clancy-${year}-${monthCode}-${day}`,
       }
     },
     monthGrid(instant, _locale, siteId) {
@@ -277,14 +301,11 @@ function makeClancyDriver(): CalendarDriver {
       const cells: CalendarCell[] = Array.from({ length }, (_, offset) => {
         const sol = first + offset
         const day = offset + 1
-        const noon = dateFromLocalMsd(sol + 0.5, siteId)
-        const inThisMonth =
-          lsMonth(solarLongitude(noon)) === parts.month && clancyMarsYear(noon) === parts.year
         return {
           day,
           key: `clancy-${parts.year}-${parts.monthCode}-${day}`,
           instant: dateFromLocalMsd(sol + time, siteId),
-          inMonth: inThisMonth,
+          inMonth: true,
           inWindow: solInWindowFromLocal(sol, siteId),
           title: `Sol ${day} · Ls ${startLs}°–${endLs}° · MY ${parts.year}`,
         }
@@ -306,12 +327,11 @@ function makeClancyDriver(): CalendarDriver {
     shiftMonth(instant, delta, siteId) {
       const parts = this.dateParts(instant, siteId)
       const time = timeOfSol(instant, siteId)
-      const monthIndex = parts.year * 12 + (parts.month - 1) + delta
-      const year = Math.floor(monthIndex / 12)
-      const month = (((monthIndex % 12) + 12) % 12) + 1
-      const { first, last } = clancyMonthSolRange(year, month, siteId)
-      const length = Math.max(1, last - first)
-      const day = Math.min(Math.max(1, parts.day), length)
+      const { first, last } = clancyMonthFromIndex(
+        parts.year * 12 + parts.month - 1 + delta,
+        siteId,
+      )
+      const day = Math.min(parts.day, Math.max(1, last - first))
       return dateFromLocalMsd(first + day - 1 + time, siteId)
     },
     shiftYear(instant, delta, siteId) {

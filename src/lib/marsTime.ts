@@ -172,18 +172,24 @@ export function clancyMarsYearFromJdTt(jdTt: number, ls: number): number {
   return Math.round((lastEquinox - CLANCY_MY1_JD) / MARS_TROPICAL_DAYS) + 1
 }
 
+/** Signed degrees from the target Ls, wrapped to (−180, 180]. */
+function lsOffset(jdTt: number, target: number): number {
+  return ((solarLongitudeFromJdTt(jdTt) - target + 540) % 360) - 180
+}
+
 export function julianDateTtAtLs(marsYear: number, ls: number): number {
   const target = wrapDegrees(ls)
   const guess =
     CLANCY_MY1_JD + (marsYear - 1) * MARS_TROPICAL_DAYS + (target / 360) * MARS_TROPICAL_DAYS
-  let low = guess - 20
-  let high = guess + 20
-  for (let i = 0; i < 40; i++) {
+  // Mars' orbital eccentricity swings true Ls up to ~10.7° either side of the
+  // mean rate used for the guess, which is ~21 days near the solstices.
+  let low = guess - 40
+  let high = guess + 40
+  for (let i = 0; i < 8 && lsOffset(low, target) > 0; i++) low -= 20
+  for (let i = 0; i < 8 && lsOffset(high, target) < 0; i++) high += 20
+  for (let i = 0; i < 60; i++) {
     const mid = (low + high) / 2
-    let value = solarLongitudeFromJdTt(mid)
-    if (target === 0 && value > 180) value -= 360
-    if (target > 300 && value < 60) value += 360
-    if (value < target) low = mid
+    if (lsOffset(mid, target) < 0) low = mid
     else high = mid
   }
   return (low + high) / 2

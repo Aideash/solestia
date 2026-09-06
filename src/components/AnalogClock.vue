@@ -232,9 +232,6 @@ function onPointerUp() {
       <circle class="analog__hub" :cx="cx" :cy="cy" r="2.2" />
     </svg>
     <p class="analog__readout">{{ label }}</p>
-    <span class="update-note" :class="{ visible: !driver.id?.includes('civil') }"
-      >* Clock updates once an SI-second in Live regardless of mode used</span
-    >
   </div>
 </template>
 
@@ -330,17 +327,5 @@ function onPointerUp() {
   font-family: $font-mono;
   font-size: calc(0.8125rem * var(--analog-scale));
   text-align: center;
-}
-
-.update-note {
-  font-size: 0.75rem;
-  color: $color-text-muted;
-  text-align: center;
-  margin-top: $spacing-xs;
-  opacity: 0;
-  transition: opacity 150ms ease;
-  &.visible {
-    opacity: 0.8;
-  }
 }
 </style>

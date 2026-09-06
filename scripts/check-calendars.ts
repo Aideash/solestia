@@ -6,7 +6,14 @@ import {
   darianMonthLength,
   isDarianLeap,
 } from '../src/lib/marsCalendars.ts'
-import { clancyMarsYear, dateFromMsd, marsSolDate, solarLongitude } from '../src/lib/marsTime.ts'
+import {
+  clancyMarsYear,
+  dateAtLs,
+  dateFromMsd,
+  localMsd,
+  marsSolDate,
+  solarLongitude,
+} from '../src/lib/marsTime.ts'
 
 function driver(id: string): CalendarDriver {
   const result = calendarDrivers.find((candidate) => candidate.id === id)
@@ -179,6 +186,58 @@ for (const calendar of [darianCalendar, clancyCalendar]) {
       )
       assertSelectedCellRoundTrip(calendar, shifted, 'airy')
     }
+  }
+}
+
+// Mars' equation of center moves a true Ls boundary up to ~21 sols away from
+// the mean-rate guess, so the solver has to bracket at least that far out.
+for (const marsYear of [12, 38, 60]) {
+  for (let month = 1; month <= 12; month++) {
+    const target = (month - 1) * 30
+    const error = Math.abs(
+      ((solarLongitude(dateAtLs(marsYear, target)) - target + 540) % 360) - 180,
+    )
+    assert.ok(error < 1e-3, `dateAtLs(MY ${marsYear}, Ls ${target}°) is off by ${error}°`)
+  }
+}
+
+// The Ls calendar draws no filler cells: consecutive months tile the sols
+// without gaps, and every cell selects the date it shows.
+for (const site of ['airy', 'curiosity']) {
+  let lsAt = new Date(Date.UTC(2025, 0, 1))
+  let expectedFirstSol: number | undefined
+
+  for (let step = 0; step < 14; step++) {
+    const selected = clancyCalendar.dateParts(lsAt, site)
+    const grid = clancyCalendar.monthGrid(lsAt, undefined, site)
+    assert.ok(grid)
+    const opening = grid.cells[0]
+    assert.ok(opening)
+    assert.ok(
+      grid.cells.every((cell) => cell.inMonth),
+      `${grid.headingPrimary} grays sols that belong to it`,
+    )
+    assertSelectedCellRoundTrip(clancyCalendar, lsAt, site)
+
+    const firstSol = Math.floor(localMsd(opening.instant, site))
+    if (expectedFirstSol !== undefined) {
+      assert.equal(
+        firstSol,
+        expectedFirstSol,
+        `${grid.headingPrimary} does not abut the last month`,
+      )
+    }
+    expectedFirstSol = firstSol + grid.cells.length
+
+    grid.cells.forEach((cell, offset) => {
+      const picked = clancyCalendar.dateParts(cell.instant, site)
+      assert.equal(picked.key, cell.key, `Picking ${cell.key} lands on ${picked.key}`)
+      assert.equal(picked.day, offset + 1)
+      assert.equal(picked.month, selected.month)
+      assert.equal(picked.year, selected.year)
+    })
+
+    lsAt = clancyCalendar.shiftMonth(lsAt, 1, site)
   }
 }
 

@@ -52,11 +52,15 @@ function meanFrameMs(at: Date, siteId?: string): number {
   return lmstFraction(at, siteId) * MS_PER_SOL
 }
 
+/** One Mars second, a shade longer than an SI second at ~1027 ms. */
+const MS_PER_MARS_SECOND = MS_PER_MARS_MINUTE / 60
+
 const mean24: ClockDriver = {
   id: 'mars-mean-24',
   name: 'Mean 24-hour',
   dial: { majorTicks: 24, minorTicks: 60, numeralEvery: 1 },
   periods: { major: MS_PER_SOL, middle: MS_PER_MARS_HOUR, minor: MS_PER_MARS_MINUTE },
+  tickMs: MS_PER_MARS_SECOND,
   frameMs: meanFrameMs,
   numerals() {
     return numberedNumerals(24, 1, (index) => String(index))
@@ -74,6 +78,7 @@ const mean12: ClockDriver = {
   name: 'Mean 12-hour',
   dial: { majorTicks: 12, minorTicks: 60, numeralEvery: 1 },
   periods: { major: 12 * MS_PER_MARS_HOUR, middle: MS_PER_MARS_HOUR, minor: MS_PER_MARS_MINUTE },
+  tickMs: MS_PER_MARS_SECOND,
   frameMs: meanFrameMs,
   numerals() {
     return numberedNumerals(12, 1, (index) => (index === 0 ? '12' : String(index)))
@@ -97,6 +102,7 @@ const apparent24: ClockDriver = {
   name: 'Apparent 24-hour',
   dial: { majorTicks: 24, minorTicks: 60, numeralEvery: 1 },
   periods: { major: MS_PER_SOL, middle: MS_PER_MARS_HOUR, minor: MS_PER_MARS_MINUTE },
+  tickMs: MS_PER_MARS_SECOND,
   frameMs(at, siteId) {
     return apparentFraction(at, siteId) * MS_PER_SOL
   },

@@ -19,6 +19,22 @@ function closeTurn(actual: number, expected: number, tolerance: number, what: st
   assert.ok(apart < tolerance, `${what}: ${actual} is not within ${tolerance} of ${expected}`)
 }
 
+/**
+ * A live readout steps once per `tickMs`, so a tick that does not divide the
+ * second hand's revolution would leave the hand landing between its own marks.
+ */
+function assertTick(clock: ClockDriver): void {
+  assert.ok(clock.tickMs > 0, `${clock.id}: tick must be positive`)
+  const revolution = clock.periods.minor
+  if (revolution === null) return
+  const ticks = revolution / clock.tickMs
+  assert.ok(ticks >= 1, `${clock.id}: tick is longer than one turn of the second hand`)
+  assert.ok(
+    Math.abs(ticks - Math.round(ticks)) < 1e-9,
+    `${clock.id}: ${ticks} ticks per turn of the second hand is not a whole number`,
+  )
+}
+
 function localTime(
   year: number,
   month: number,
@@ -87,6 +103,7 @@ const sample = localTime(2026, 3, 20, 15, 30, 45)
 const handNames: ClockHand[] = ['major', 'middle', 'minor']
 
 for (const clock of clockDrivers) {
+  assertTick(clock)
   const hands = clock.hands(sample)
   assert.ok(hands.major >= 0 && hands.major < 1)
   assert.ok(hands.middle >= 0 && hands.middle < 1)
@@ -158,6 +175,7 @@ const galeNoon = withHandAt(mean24, curiosityLand, 'major', 0.5, 'curiosity')
 closeTurn(mean24.hands(galeNoon, 'curiosity').major, 0.5, 1e-4, 'Gale local noon')
 
 for (const clock of marsClockDrivers) {
+  assertTick(clock)
   if (clock.id === 'mars-apparent-24') continue
   const frame = clock.frameMs(curiosityLand, 'curiosity')
   const utcHands = clock.hands(curiosityLand, 'curiosity')

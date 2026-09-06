@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
 import { groupedMarsSites, isMarsSiteId } from '../data/marsSites.ts'
-import { epochKey } from '../epoch.ts'
+import { epochKey, SI_SECOND_CADENCE } from '../epoch.ts'
 import { marsCalendarDrivers } from '../lib/marsCalendars.ts'
 import { marsClockDrivers } from '../lib/marsClocks.ts'
 import { clampEpoch, solarSystemAt } from '../lib/kepler.ts'
@@ -51,6 +51,22 @@ watch(siteId, (id) => {
   } catch {
     // Private mode or quota — the picker still works for the session.
   }
+})
+
+/**
+ * The live clock beats in Mars seconds while this page is up, so the header runs
+ * a touch slow the way a clock at Gale would. Leaving restores the SI second.
+ */
+watch(
+  [clock, siteId],
+  ([driver, site]) => {
+    epoch.cadence.value = { tickMs: driver.tickMs, frameMs: (at) => driver.frameMs(at, site) }
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  epoch.cadence.value = SI_SECOND_CADENCE
 })
 
 function setViewed(at: Date) {

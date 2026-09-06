@@ -35,6 +35,12 @@ export type ClockDriver = {
   dial: ClockDial
   /** Milliseconds each hand takes to complete one revolution. */
   periods: ClockPeriods
+  /**
+   * Milliseconds in the finest unit this clock shows, which is how often a live
+   * readout has anything new to say. The dial cannot supply it: its minor ticks
+   * count whatever the face wanted to draw, not the unit the readout prints.
+   */
+  tickMs: number
   /** Milliseconds elapsed in this clock's own day frame. */
   frameMs(at: Date, timeZone?: string): number
   numerals(locale?: string): ClockNumeral[]
@@ -131,6 +137,7 @@ const civil12: ClockDriver = {
   name: 'Civil 12-hour',
   dial: { majorTicks: 12, minorTicks: 60, numeralEvery: 1 },
   periods: { major: 12 * MS_PER_HOUR, middle: MS_PER_HOUR, minor: MS_PER_MINUTE },
+  tickMs: 1000,
   frameMs: localDayMs,
   numerals() {
     return numberedNumerals(12, 1, (index) => (index === 0 ? '12' : String(index)))
@@ -152,6 +159,7 @@ const civil24: ClockDriver = {
   name: 'Civil 24-hour',
   dial: { majorTicks: 24, minorTicks: 60, numeralEvery: 1 },
   periods: { major: MS_PER_DAY, middle: MS_PER_HOUR, minor: MS_PER_MINUTE },
+  tickMs: 1000,
   frameMs: localDayMs,
   numerals() {
     return numberedNumerals(24, 1, (index) => String(index))
@@ -174,6 +182,8 @@ const metric: ClockDriver = {
   name: 'Metric (decimal)',
   dial: { majorTicks: 10, minorTicks: 100, numeralEvery: 1 },
   periods: { major: MS_PER_DAY, middle: MS_PER_DAY / 10, minor: MS_PER_DAY / 1000 },
+  /** One decimal second: 864 ms. */
+  tickMs: MS_PER_DAY / 100_000,
   frameMs: localDayMs,
   numerals() {
     return numberedNumerals(10, 1, (index) => (index === 0 ? '10' : String(index)))
@@ -204,6 +214,8 @@ const indian: ClockDriver = {
   name: 'Indian (muhurta)',
   dial: { majorTicks: 30, minorTicks: 30, numeralEvery: 5 },
   periods: { major: MS_PER_DAY, middle: MS_PER_DAY / 30, minor: MS_PER_DAY / 900 },
+  /** One kastha: 3.2 s. */
+  tickMs: MS_PER_DAY / 27_000,
   frameMs: localDayMs,
   numerals() {
     return numberedNumerals(30, 5, (index) => String(index))
@@ -250,6 +262,8 @@ const chineseShi: ClockDriver = {
   nativeLocale: 'zh',
   dial: { majorTicks: 12, minorTicks: 8, numeralEvery: 1 },
   periods: { major: MS_PER_DAY, middle: 2 * MS_PER_HOUR, minor: 15 * MS_PER_MINUTE },
+  /** One fen, which really is a whole minute long. */
+  tickMs: MS_PER_MINUTE,
   frameMs: chineseShiOffset,
   numerals(locale) {
     return EARTHLY_BRANCHES.map((branch, index) => ({
@@ -282,6 +296,8 @@ const swatch: ClockDriver = {
   name: 'Swatch (.beat)',
   dial: { majorTicks: 10, minorTicks: 100, numeralEvery: 1 },
   periods: { major: MS_PER_DAY, middle: MS_PER_DAY / 10, minor: MS_PER_DAY / 1000 },
+  /** A tenth of a beat, the last digit the readout prints: 8.64 s. */
+  tickMs: MS_PER_DAY / 10_000,
   frameMs: bielDayMs,
   numerals() {
     return numberedNumerals(10, 1, (index) => String(index * 100))
