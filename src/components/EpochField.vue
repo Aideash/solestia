@@ -24,7 +24,38 @@ const MS_PER_MINUTE = 60_000
 const MS_PER_HOUR = 3_600_000
 const MS_PER_DAY = 86_400_000
 const MS_PER_MONTH = 30 * MS_PER_DAY
+const MS_PER_YEAR = 365.25 * MS_PER_DAY
 const DRAG_THRESHOLD = 4
+
+/**
+ * Shortest gap between playback steps. rAF pacing is the real throttle; this
+ * only keeps a fast display from re-rendering the whole system every frame.
+ */
+const MIN_STEP_MS = 50
+
+type SpeedStep = { msPerSecond: number; label: string }
+
+function speeds(unit: string, unitMs: number, amounts: number[]): SpeedStep[] {
+  return amounts.map((amount) => ({
+    msPerSecond: amount * unitMs,
+    label: `${amount} ${unit}/s`,
+  }))
+}
+
+/**
+ * Simulated time per wall-clock second. The rungs roughly double but land on
+ * readable amounts of one unit, so the label stays exact instead of reading
+ * like 1.78 d/s.
+ */
+const SPEED_STEPS: SpeedStep[] = [
+  ...speeds('s', 1000, [1, 2, 5, 15, 30]),
+  ...speeds('min', MS_PER_MINUTE, [1, 2, 5, 15, 30]),
+  ...speeds('h', MS_PER_HOUR, [1, 2, 6, 12]),
+  ...speeds('d', MS_PER_DAY, [1, 2, 5, 10, 30]),
+  ...speeds('y', MS_PER_YEAR, [1, 2, 5, 10, 50, 100]),
+]
+
+const DEFAULT_SPEED_INDEX = SPEED_STEPS.findIndex((step) => step.msPerSecond === MS_PER_DAY)
 
 const CLOCK_FORMAT: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -48,6 +79,11 @@ const editOrigin = ref('')
 const dragging = ref(false)
 const didScrub = ref(false)
 const expanded = ref(false)
+const playing = ref(false)
+const speedIndex = ref(DEFAULT_SPEED_INDEX)
+const anchorMs = ref<number | null>(null)
+
+const speed = computed(() => SPEED_STEPS[speedIndex.value])
 
 const rangeSpan = computed(() => props.toMs - props.fromMs)
 const rangeValue = computed(() => clampMs(props.at.getTime()) - props.fromMs)
@@ -147,6 +183,7 @@ let scrubMs = 0
 function onPointerDown(event: PointerEvent) {
   if (editing.value || event.button !== 0) return
   event.preventDefault()
+  stopPlayback()
   dragging.value = true
   didScrub.value = false
   lastX = event.clientX
@@ -180,13 +217,70 @@ function onPointerUp() {
 function onWheel(event: WheelEvent) {
   if (editing.value) return
   event.preventDefault()
+  stopPlayback()
   const delta = event.deltaX + event.deltaY
   commitDate(new Date(props.at.getTime() - (delta * scrubMsPerPixel(event)) / 8))
 }
 
 function onRangeInput(event: Event) {
   const value = Number((event.target as HTMLInputElement).value)
+  stopPlayback()
   commitDate(new Date(props.fromMs + value))
+}
+
+let frame = 0
+let playMs = 0
+let lastStepAt = 0
+
+function startPlayback() {
+  const from = clampMs(props.at.getTime())
+  anchorMs.value = from
+  playMs = from
+  // Committing the current instant first drops live mode without a visible jump.
+  commitDate(new Date(from))
+  playing.value = true
+  lastStepAt = performance.now()
+  frame = requestAnimationFrame(stepPlayback)
+}
+
+function stopPlayback() {
+  if (!playing.value) return
+  cancelAnimationFrame(frame)
+  frame = 0
+  playing.value = false
+}
+
+/**
+ * Advancing by measured elapsed time keeps the rate true to the wall clock at
+ * any frame rate, so a page that paints slowly takes coarser steps rather than
+ * falling behind. The accumulator, not `at`, is the source of truth while
+ * playing, so the epoch coming back around from the parent cannot feed back.
+ */
+function stepPlayback(now: number) {
+  frame = requestAnimationFrame(stepPlayback)
+  const elapsed = now - lastStepAt
+  if (elapsed < MIN_STEP_MS) return
+  lastStepAt = now
+  const next = playMs + (elapsed * speed.value.msPerSecond) / 1000
+  playMs = clampMs(next)
+  commitDate(new Date(playMs))
+  if (playMs !== next) stopPlayback()
+}
+
+function togglePlayback() {
+  if (playing.value) stopPlayback()
+  else startPlayback()
+}
+
+function stepSpeed(delta: number) {
+  speedIndex.value = Math.min(SPEED_STEPS.length - 1, Math.max(0, speedIndex.value + delta))
+}
+
+function resetPlayback() {
+  const from = anchorMs.value
+  if (from === null) return
+  stopPlayback()
+  commitDate(new Date(from))
 }
 
 onMounted(() => {
@@ -195,7 +289,15 @@ onMounted(() => {
 
 onUnmounted(() => {
   rootEl.value?.removeEventListener('wheel', onWheel)
+  cancelAnimationFrame(frame)
 })
+
+watch(
+  () => props.live,
+  (isLive) => {
+    if (isLive) stopPlayback()
+  },
+)
 
 watch(
   () => props.at,
@@ -272,7 +374,68 @@ watch(
               @input="onRangeInput"
             />
           </div>
-          <span class="epoch__tz">GMT{{ tzHours > 0 ? '+' : '' }}{{ tzHours }}</span>
+          <div>
+            <div class="epoch__tz-row">
+              <button
+                type="button"
+                :disabled="speedIndex === 0"
+                :aria-label="`Slower than ${speed.label}`"
+                @click="stepSpeed(-1)"
+              >
+                -
+              </button>
+              <button
+                type="button"
+                :aria-label="playing ? 'Pause the passage of time' : 'Play the passage of time'"
+                @click="togglePlayback"
+              >
+                <svg viewBox="0 0 18 24" aria-hidden="true" focusable="false">
+                  <path
+                    v-if="playing"
+                    d="M 5.5 4 L 5.5 20 M 12.5 4 L 12.5 20"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="3"
+                  />
+                  <path
+                    v-else
+                    d="M 4 20 L 4 4 L 16 12 Z"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <button
+                type="button"
+                :disabled="speedIndex === SPEED_STEPS.length - 1"
+                :aria-label="`Faster than ${speed.label}`"
+                @click="stepSpeed(1)"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                :disabled="anchorMs === null"
+                aria-label="Reset to the time playback started from"
+                @click="resetPlayback"
+              >
+                <svg viewBox="0 0 30 24" aria-hidden="true" focusable="false">
+                  <path
+                    d="M 27 17.25 A 10.5 10.5 0 0 0 6 17.25 M 3.3 14 L 6 17.25 L 8.7 14"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+              <span class="epoch__rate">{{ speed.label }}</span>
+              <span class="epoch__tz">GMT{{ tzHours > 0 ? '+' : '' }}{{ tzHours }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </Transition>
@@ -322,13 +485,53 @@ watch(
   cursor: grabbing;
 }
 
-.epoch__tz {
-  display: block;
-  margin-top: 0.2rem;
-  color: $color-text-muted;
-  font-family: $font-mono;
+.epoch__tz-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
   font-size: 0.6875rem;
-  text-align: right;
+  font-family: $font-mono;
+  color: $color-text-muted;
+
+  > button {
+    padding: 0 2px;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: 0.75rem;
+    height: 0.75rem;
+    cursor: pointer;
+    border-radius: 2px;
+
+    &:hover,
+    &:focus-visible {
+      color: $color-text;
+      background: color-mix(in srgb, $color-text 10%, $color-bg);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+      background: none;
+      color: inherit;
+    }
+  }
+
+  svg {
+    height: 100%;
+  }
+
+  .epoch__rate {
+    margin-top: 0.2rem;
+    margin-left: 0.35rem;
+  }
+
+  .epoch__tz {
+    flex: 1;
+    margin-top: 0.2rem;
+    text-align: right;
+  }
 }
 
 .epoch__live {

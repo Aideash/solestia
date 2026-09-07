@@ -82,6 +82,7 @@ $flanked-width: 78rem;
   .stage__dials {
     grid-template-columns: 1fr;
     gap: $spacing-lg;
+    z-index: 1001; // Above header
   }
 
   .stage__dials > * {

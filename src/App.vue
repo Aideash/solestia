@@ -103,7 +103,8 @@ function onAppKeydown(event: KeyboardEvent) {
   if (
     route.name === 'earth-time' ||
     route.name === 'earth-eclipse' ||
-    route.name === 'earth-fields'
+    route.name === 'earth-fields' ||
+    route.name === 'earth-epicycles'
   ) {
     void router.push({ name: 'earth-system' })
     event.preventDefault()
@@ -133,19 +134,21 @@ onUnmounted(() => {
 
 <template>
   <div class="app">
-    <header class="app__header">
-      <h1>
-        <RouterLink class="app__title" to="/">Solestia</RouterLink>
-        <span v-if="subtitle" class="app__subtitle">{{ subtitle }}</span>
-      </h1>
-      <EpochField
-        :at="viewed"
-        :live="live"
-        :from-ms="epochRange.fromMs"
-        :to-ms="epochRange.toMs"
-        @change="setViewed"
-        @live="goLive"
-      />
+    <header>
+      <div class="app__header">
+        <h1>
+          <RouterLink class="app__title" to="/">Solestia</RouterLink>
+          <span v-if="subtitle" class="app__subtitle">{{ subtitle }}</span>
+        </h1>
+        <EpochField
+          :at="viewed"
+          :live="live"
+          :from-ms="epochRange.fromMs"
+          :to-ms="epochRange.toMs"
+          @change="setViewed"
+          @live="goLive"
+        />
+      </div>
     </header>
     <RouterView />
   </div>
@@ -159,8 +162,16 @@ $center-width: 32rem;
 .app {
   max-width: 1500px;
   margin: 0 auto;
-  padding: $spacing-lg $spacing-md 2.5rem;
+  padding: $spacing-md $spacing-md 2.5rem;
   min-height: 100vh;
+}
+
+header {
+  background: linear-gradient(to bottom, $color-bg 85%, transparent);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding: 0.5rem 0 1px 0;
 }
 
 .app__header {

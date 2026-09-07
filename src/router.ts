@@ -44,6 +44,12 @@ export const router = createRouter({
       meta: { subtitle: 'Earth · fields' },
     },
     {
+      path: '/earth/epicycles',
+      name: 'earth-epicycles',
+      component: () => import('./views/EarthEpicyclePage.vue'),
+      meta: { subtitle: 'Earth · epicycles' },
+    },
+    {
       path: '/mars/time',
       name: 'mars-time',
       component: () => import('./views/MarsTimePage.vue'),
