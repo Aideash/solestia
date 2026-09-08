@@ -37,11 +37,20 @@ import {
   buildSelectionModel,
   collectNameWorthyPicks,
   collectStemFootSpots,
+  pickNearestByScreenDistance,
   type ConstellationScaleData,
   type ConstellationSelectionModel,
   type NameWorthyPick,
   type OverviewStarField,
 } from './constellationSceneModel.ts'
+import {
+  deselectMorphAmount,
+  deselectOpacityAmount,
+  deselectPhaseWeights,
+  easeInOutCubic,
+  frontFacingCameraOffset,
+  yawPitchFromDirection,
+} from './constellationSceneTransition.ts'
 
 const props = withDefaults(
   defineProps<{
@@ -71,12 +80,13 @@ const emit = defineEmits<{
 const OVERVIEW_RADIUS = 100
 const SLICE_TARGET_RADIUS = 60
 const OVERVIEW_DIM_OPACITY = 0.16
-const TRANSITION_MS = 900
+const TRANSITION_MS = 1100
+const SLICE_CAMERA_DISTANCE = SLICE_TARGET_RADIUS * 2.4
 const CAMERA_FOV = 60
 const DRAG_THRESHOLD_PX = 6
 const CLICK_MAX_MS = 500
 const PICK_THRESHOLD = 1.6
-const NAME_PICK_THRESHOLD = 2.4
+const NAME_PICK_RADIUS_PX = 18
 const MAX_PITCH = (85 * Math.PI) / 180
 
 // --- Template refs and accessible state ------------------------------------
@@ -117,10 +127,12 @@ let previewConstellationId: string | null = null
 let regionPreviewId: string | null = null
 
 let selectionGroup: Group | null = null
+/** Unit depth of the active selection; drives the Earth-view exit aim. */
+let activeSelectionDepth: Vec3 | null = null
 type Morphable = { attribute: Float32BufferAttribute; start: Float32Array; end: Float32Array }
 let morphables: Morphable[] = []
 let nameWorthyPicks: { pick: NameWorthyPick; world: Vector3 }[] = []
-let nameWorthyPoints: Points | null = null
+const nameWorthyScreenScratch = new Vector3()
 
 let rafId = 0
 let needsRender = false
@@ -142,10 +154,13 @@ let pointerMoved = false
 let dragging = false
 let activePointerId: number | null = null
 
-// Camera transition endpoints.
+// Camera transition endpoints. Deselect also uses the mid pose (Earth line of sight
+// at slice distance) between start and end.
 let camStart = new Vector3()
+let camMid = new Vector3()
 let camEnd = new Vector3()
 let lookStart = new Vector3()
+let lookMid = new Vector3()
 let lookEnd = new Vector3()
 let overviewOpacityStart = 1
 let overviewOpacityEnd = 1
@@ -191,12 +206,6 @@ function scheduleFrame(): void {
 function requestRender(): void {
   needsRender = true
   scheduleFrame()
-}
-
-function easeInOutCubic(t: number): number {
-  if (t <= 0) return 0
-  if (t >= 1) return 1
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
 
 function overviewLookDirection(): Vector3 {
@@ -403,6 +412,11 @@ function buildSelection(model: ConstellationSelectionModel): void {
   group.name = `selection-${model.id}`
   morphables = []
   nameWorthyPicks = []
+  activeSelectionDepth = {
+    x: model.frame.depth.x,
+    y: model.frame.depth.y,
+    z: model.frame.depth.z,
+  }
 
   const { east, north, depth } = frameBasis(model)
   const centroid = model.centroidLocal
@@ -595,41 +609,8 @@ function buildSelection(model: ConstellationSelectionModel): void {
   if (referenceOutline) group.add(referenceOutline)
 
   const named = collectNameWorthyPicks(model)
-  if (named.length > 0) {
-    const geometry = new BufferGeometry()
-    const positions = new Float32Array(named.length * 3)
-    named.forEach((pick, index) => {
-      const world = slicePoint(pick.position)
-      positions[index * 3] = world.x
-      positions[index * 3 + 1] = world.y
-      positions[index * 3 + 2] = world.z
-      nameWorthyPicks.push({ pick, world: world.clone() })
-    })
-    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
-    // Invisible pick helpers: sized for raycasting, fully transparent in the shader.
-    geometry.setAttribute(
-      'aColor',
-      new Float32BufferAttribute(makeColorArray(named.length, new Color(FOCUS_GOLD_COLOR)), 3),
-    )
-    geometry.setAttribute(
-      'aSize',
-      new Float32BufferAttribute(new Float32Array(named.length).fill(14), 1),
-    )
-    const material = new ShaderMaterial({
-      vertexShader: VERTEX_SHADER,
-      fragmentShader: FRAGMENT_SHADER,
-      transparent: true,
-      depthWrite: false,
-      blending: AdditiveBlending,
-      uniforms: {
-        uPixelRatio: { value: renderer?.getPixelRatio() ?? 1 },
-        uSizeScale: { value: 1 },
-        uOpacity: { value: 0 },
-      },
-    })
-    nameWorthyPoints = new Points(geometry, material)
-    nameWorthyPoints.name = 'name-worthy-picks'
-    group.add(nameWorthyPoints)
+  for (const pick of named) {
+    nameWorthyPicks.push({ pick, world: slicePoint(pick.position) })
   }
 
   scene.add(group)
@@ -673,9 +654,10 @@ function startSelectionTransition(model: ConstellationSelectionModel): void {
 
   // Side view: offset along the frame's east axis, lifted along north.
   const { east, north } = frameBasis(model)
-  const dist = SLICE_TARGET_RADIUS * 2.4
   camStart = camera.position.clone()
-  camEnd = new Vector3().addScaledVector(east, dist).addScaledVector(north, dist * 0.35)
+  camEnd = new Vector3()
+    .addScaledVector(east, SLICE_CAMERA_DISTANCE)
+    .addScaledVector(north, SLICE_CAMERA_DISTANCE * 0.35)
   lookStart = overviewLookDirection().multiplyScalar(OVERVIEW_RADIUS).add(camStart)
   lookEnd = new Vector3(0, 0, 0)
   overviewOpacityStart = overviewMaterial?.uniforms.uOpacity.value ?? 1
@@ -693,11 +675,23 @@ function startDeselectTransition(): void {
   if (!camera) return
   sceneMode = 'toOverview'
   disableControls()
+
+  let depth = activeSelectionDepth
+  if (!depth) {
+    const look = overviewLookDirection()
+    depth = { x: look.x, y: look.y, z: look.z }
+  }
+  activeSelectionDepth = depth
+  const facing = frontFacingCameraOffset(depth, camera.position.length(), SLICE_CAMERA_DISTANCE)
+
+  // Phase 1 endpoint: Earth line of sight at slice distance, looking at origin.
+  // Phase 2 endpoint: camera at Earth looking along the constellation's sky direction.
   camStart = camera.position.clone()
-  camEnd = new Vector3(0, 0, 0)
-  const look = overviewLookDirection().multiplyScalar(OVERVIEW_RADIUS)
-  lookStart = new Vector3(0, 0, 0)
-  lookEnd = look
+  camMid.set(facing.x, facing.y, facing.z)
+  camEnd.set(0, 0, 0)
+  lookStart.set(0, 0, 0)
+  lookMid.set(0, 0, 0)
+  lookEnd.set(depth.x * OVERVIEW_RADIUS, depth.y * OVERVIEW_RADIUS, depth.z * OVERVIEW_RADIUS)
   overviewOpacityStart = overviewMaterial?.uniforms.uOpacity.value ?? OVERVIEW_DIM_OPACITY
   overviewOpacityEnd = 1
 
@@ -709,15 +703,43 @@ function startDeselectTransition(): void {
   }
 }
 
-function applyTransitionProgress(t: number): void {
-  const eased = easeInOutCubic(t)
+function applyMorphProgress(morphT: number): void {
   for (const morphable of morphables) {
     const array = morphable.attribute.array as Float32Array
     for (let i = 0; i < array.length; i++) {
-      array[i] = morphable.start[i] + (morphable.end[i] - morphable.start[i]) * eased
+      array[i] = morphable.start[i] + (morphable.end[i] - morphable.start[i]) * morphT
     }
     morphable.attribute.needsUpdate = true
   }
+}
+
+function applyTransitionProgress(t: number): void {
+  if (sceneMode === 'toOverview') {
+    const { reorient, zoomMorph } = deselectPhaseWeights(t)
+    const reorientEased = easeInOutCubic(reorient)
+    const zoomEased = easeInOutCubic(zoomMorph)
+    applyMorphProgress(deselectMorphAmount(t))
+    if (overviewMaterial) {
+      const opacityT = deselectOpacityAmount(t)
+      overviewMaterial.uniforms.uOpacity.value =
+        overviewOpacityStart + (overviewOpacityEnd - overviewOpacityStart) * opacityT
+    }
+    if (camera) {
+      if (zoomMorph <= 0) {
+        camera.position.lerpVectors(camStart, camMid, reorientEased)
+        const look = new Vector3().lerpVectors(lookStart, lookMid, reorientEased)
+        camera.lookAt(look)
+      } else {
+        camera.position.lerpVectors(camMid, camEnd, zoomEased)
+        const look = new Vector3().lerpVectors(lookMid, lookEnd, zoomEased)
+        camera.lookAt(look)
+      }
+    }
+    return
+  }
+
+  const eased = easeInOutCubic(t)
+  applyMorphProgress(eased)
   if (overviewMaterial) {
     overviewMaterial.uniforms.uOpacity.value =
       overviewOpacityStart + (overviewOpacityEnd - overviewOpacityStart) * eased
@@ -739,6 +761,11 @@ function finishTransition(): void {
       rebuildSelectionInPlace()
     }
   } else if (sceneMode === 'toOverview') {
+    if (activeSelectionDepth) {
+      const aim = yawPitchFromDirection(activeSelectionDepth)
+      yaw = aim.yaw
+      pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, aim.pitch))
+    }
     sceneMode = 'overview'
     pendingRebuild = false
     disposeSelection()
@@ -828,37 +855,55 @@ function updateObjectTooltip(event: PointerEvent): void {
     clearObjectTooltip()
     return
   }
-  if (!raycaster || !camera || !nameWorthyPoints || nameWorthyPicks.length === 0) {
-    clearObjectTooltip()
-    return
-  }
-  const ndc = pointerToNdc(event)
-  if (!ndc) {
-    clearObjectTooltip()
-    return
-  }
-  raycaster.setFromCamera(ndc, camera)
-  raycaster.params.Points = { threshold: NAME_PICK_THRESHOLD }
-  const hits = raycaster.intersectObject(nameWorthyPoints, false)
-  const hit = hits[0]
-  if (!hit || hit.index === undefined) {
-    clearObjectTooltip()
-    if (renderer) renderer.domElement.style.cursor = 'grab'
-    return
-  }
-  const entry = nameWorthyPicks[hit.index]
-  if (!entry || !container.value) {
+  if (!camera || !renderer || nameWorthyPicks.length === 0 || !container.value) {
     clearObjectTooltip()
     return
   }
   const rect = container.value.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) {
+    clearObjectTooltip()
+    return
+  }
+
+  // Project each named object to CSS pixels and pick the nearest within a small
+  // radius. Three.js Points raycasting uses a world-space threshold sorted by
+  // camera distance, which lets one nearer star dominate most of the view.
+  const screenTargets: { x: number; y: number }[] = []
+  const visibleIndices: number[] = []
+  for (let index = 0; index < nameWorthyPicks.length; index++) {
+    const projected = nameWorthyScreenScratch.copy(nameWorthyPicks[index].world).project(camera)
+    if (
+      !Number.isFinite(projected.x) ||
+      !Number.isFinite(projected.y) ||
+      !Number.isFinite(projected.z) ||
+      projected.z < -1 ||
+      projected.z > 1
+    ) {
+      continue
+    }
+    visibleIndices.push(index)
+    screenTargets.push({
+      x: (projected.x * 0.5 + 0.5) * rect.width,
+      y: (-projected.y * 0.5 + 0.5) * rect.height,
+    })
+  }
+
+  const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+  const localIndex = pickNearestByScreenDistance(screenTargets, pointer, NAME_PICK_RADIUS_PX)
+  if (localIndex === null) {
+    clearObjectTooltip()
+    renderer.domElement.style.cursor = 'grab'
+    return
+  }
+
+  const entry = nameWorthyPicks[visibleIndices[localIndex]]
   objectTooltip.value = {
     name: entry.pick.name,
     detailLines: entry.pick.detailLines,
-    x: event.clientX - rect.left + 12,
-    y: event.clientY - rect.top + 12,
+    x: pointer.x + 12,
+    y: pointer.y + 12,
   }
-  if (renderer) renderer.domElement.style.cursor = 'pointer'
+  renderer.domElement.style.cursor = 'pointer'
 }
 
 function onPointerDown(event: PointerEvent): void {
@@ -1080,20 +1125,21 @@ watch(
 // --- Disposal --------------------------------------------------------------
 
 function disposeSelection(): void {
-  if (!selectionGroup) return
-  scene?.remove(selectionGroup)
-  selectionGroup.traverse((object) => {
-    if (object instanceof Points || object instanceof LineSegments || object instanceof Line) {
-      object.geometry.dispose()
-      const material = object.material
-      if (Array.isArray(material)) material.forEach((entry) => entry.dispose())
-      else material.dispose()
-    }
-  })
+  if (selectionGroup) {
+    scene?.remove(selectionGroup)
+    selectionGroup.traverse((object) => {
+      if (object instanceof Points || object instanceof LineSegments || object instanceof Line) {
+        object.geometry.dispose()
+        const material = object.material
+        if (Array.isArray(material)) material.forEach((entry) => entry.dispose())
+        else material.dispose()
+      }
+    })
+  }
   selectionGroup = null
   morphables = []
   nameWorthyPicks = []
-  nameWorthyPoints = null
+  activeSelectionDepth = null
 }
 
 watch(

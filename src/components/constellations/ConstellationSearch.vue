@@ -251,6 +251,9 @@ onBeforeUnmount(() => {
 @use '../../styles/variables' as *;
 
 .constellation-search {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   width: min(18rem, 100%);
   color: #fff4d6;
   background: color-mix(in srgb, #02040a 92%, transparent);
@@ -289,11 +292,12 @@ onBeforeUnmount(() => {
 }
 
 .constellation-search__results {
+  overflow-y: auto;
   border-top: 1px solid color-mix(in srgb, #73d5e8 20%, transparent);
 }
 
 .constellation-search__list {
-  max-height: min(68vh, 34rem);
+  // max-height: min(68vh, 34rem);
   padding: $spacing-xs;
   margin: 0;
   overflow-y: auto;

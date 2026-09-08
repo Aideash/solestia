@@ -151,7 +151,7 @@ describe('ConstellationScene motion and rebuild timing', () => {
     flushFrames(0)
     expect(frames.length).toBeGreaterThan(0)
 
-    flushFrames(1000)
+    flushFrames(1200)
     flushFrames(0)
     expect(frames.length).toBe(0)
   })
@@ -166,10 +166,37 @@ describe('ConstellationScene motion and rebuild timing', () => {
     const midEmits = wrapper.emitted('scale-change') ?? []
     expect(midEmits.at(-1)?.[0]).toMatchObject({ mode: 'compressed' })
 
-    flushFrames(1000)
+    flushFrames(1200)
     flushFrames(0)
 
     const finalEmits = wrapper.emitted('scale-change') ?? []
     expect(finalEmits.at(-1)?.[0]).toMatchObject({ mode: 'true' })
+  })
+
+  it('animates a fly-out across the phased transition when motion is allowed', async () => {
+    reducedMotion = false
+    const wrapper = await mountScene({ selectedId: 'orion' })
+    flushFrames(1200)
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+
+    await wrapper.setProps({ selectedId: null })
+    flushFrames(0)
+    expect(frames.length).toBeGreaterThan(0)
+
+    flushFrames(1200)
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+  })
+
+  it('settles a fly-out within a single frame when reduced motion is preferred', async () => {
+    reducedMotion = true
+    const wrapper = await mountScene({ selectedId: 'orion' })
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+
+    await wrapper.setProps({ selectedId: null })
+    flushFrames(0)
+    expect(frames.length).toBe(0)
   })
 })

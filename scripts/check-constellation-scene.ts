@@ -12,10 +12,19 @@ import {
   buildSelectionModel,
   collectNameWorthyPicks,
   collectStemFootSpots,
+  pickNearestByScreenDistance,
   spectralColor,
   starPointSize,
   type RgbColor,
 } from '../src/components/constellations/constellationSceneModel.ts'
+import {
+  DESELECT_REORIENT_END,
+  deselectMorphAmount,
+  deselectOpacityAmount,
+  deselectPhaseWeights,
+  frontFacingCameraOffset,
+  yawPitchFromDirection,
+} from '../src/components/constellations/constellationSceneTransition.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -504,3 +513,61 @@ assert(
 console.log(
   `ok  constellation hover helpers: Orion ${orionEdges.edgeCount} overview edges, ${orionNamed.length} name-worthy picks`,
 )
+
+// Screen-space picking must choose the cursor-nearest label, not a farther
+// on-screen star that happens to be closer to the camera in world space.
+const screenTargets = [
+  { x: 100, y: 100 }, // nearer on screen to the pointer below
+  { x: 400, y: 300 }, // far on screen (would dominate a fat world-threshold pick)
+]
+assert(
+  pickNearestByScreenDistance(screenTargets, { x: 110, y: 105 }, 24) === 0,
+  'screen pick must prefer the label nearest the pointer',
+)
+assert(
+  pickNearestByScreenDistance(screenTargets, { x: 390, y: 295 }, 24) === 1,
+  'screen pick must switch when the pointer moves to another label',
+)
+assert(
+  pickNearestByScreenDistance(screenTargets, { x: 250, y: 200 }, 24) === null,
+  'screen pick must ignore empty sky beyond the pixel radius',
+)
+assert(
+  pickNearestByScreenDistance(screenTargets, { x: 100, y: 100 }, 0) === null,
+  'non-positive radius must yield no pick',
+)
+
+console.log('ok  constellation screen-space name picks')
+
+// ---------------------------------------------------------------------------
+// Deselect transition helpers: Earth aim, front-facing offset, phased morph.
+// ---------------------------------------------------------------------------
+const aim = yawPitchFromDirection({ x: 1, y: 0, z: 0 })
+assertClose(aim.yaw, 0, 1e-9, 'yaw from +X')
+assertClose(aim.pitch, 0, 1e-9, 'pitch from +X')
+
+const orionModel = buildSelectionModel('orion', 'compressed')
+assert(orionModel !== null, 'orion selection model must exist for exit-aim checks')
+const orionAim = yawPitchFromDirection(orionModel.frame.depth)
+assertFinite(orionAim.yaw, 'orion exit yaw')
+assertFinite(orionAim.pitch, 'orion exit pitch')
+
+const front = frontFacingCameraOffset(orionModel.frame.depth, 144)
+assertClose(
+  front.x * orionModel.frame.depth.x +
+    front.y * orionModel.frame.depth.y +
+    front.z * orionModel.frame.depth.z,
+  -144,
+  1e-6,
+  'front-facing camera must sit on -depth',
+)
+
+const atReorientEnd = deselectPhaseWeights(DESELECT_REORIENT_END)
+assertClose(atReorientEnd.reorient, 1, 1e-9, 'reorient completes at phase boundary')
+assertClose(atReorientEnd.zoomMorph, 0, 1e-9, 'zoom has not started at phase boundary')
+assertClose(deselectMorphAmount(DESELECT_REORIENT_END), 1, 1e-9, 'morph stays on slice through reorient')
+assertClose(deselectOpacityAmount(DESELECT_REORIENT_END), 0, 1e-9, 'overview stays dim through reorient')
+assertClose(deselectMorphAmount(1), 0, 1e-9, 'morph ends on the celestial sphere')
+assertClose(deselectOpacityAmount(1), 1, 1e-9, 'overview opacity fully restores')
+
+console.log('ok  constellation deselect transition helpers')

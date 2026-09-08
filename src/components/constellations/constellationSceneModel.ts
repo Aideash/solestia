@@ -620,3 +620,27 @@ function formatLy(value: number): string {
 function capitalize(value: string): string {
   return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1)
 }
+
+/**
+ * Nearest on-screen target within a pixel radius. Prefer this over Three.js
+ * Points raycasting for sparse labels: a world-space Points threshold is a fat
+ * cylinder sorted by camera distance, so one nearer star can dominate the view.
+ */
+export function pickNearestByScreenDistance(
+  targets: readonly { readonly x: number; readonly y: number }[],
+  pointer: { readonly x: number; readonly y: number },
+  maxDistancePx: number,
+): number | null {
+  if (!(maxDistancePx > 0) || targets.length === 0) return null
+  let bestIndex: number | null = null
+  let bestDistance = maxDistancePx
+  for (let index = 0; index < targets.length; index++) {
+    const target = targets[index]
+    const distance = Math.hypot(target.x - pointer.x, target.y - pointer.y)
+    if (distance <= bestDistance) {
+      bestDistance = distance
+      bestIndex = index
+    }
+  }
+  return bestIndex
+}
