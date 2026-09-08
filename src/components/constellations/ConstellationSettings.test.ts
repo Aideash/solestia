@@ -1,10 +1,11 @@
-import { mount, type VueWrapper } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { DOMWrapper, mount, type VueWrapper } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
 import type { ConstellationDragMode } from './constellationDragControls.ts'
 import ConstellationSettings from './ConstellationSettings.vue'
 
 const mountedWrappers: VueWrapper[] = []
+const mountHosts: HTMLElement[] = []
 
 function mountSettings(
   showStems = false,
@@ -12,16 +13,33 @@ function mountSettings(
   previewFigureLines = true,
   dragMode: ConstellationDragMode = 'normal',
 ) {
+  const app = document.createElement('div')
+  app.className = 'app'
+  document.body.appendChild(app)
+  mountHosts.push(app)
+
   const wrapper = mount(ConstellationSettings, {
-    attachTo: document.body,
+    attachTo: app,
     props: { showStems, depthMode, previewFigureLines, dragMode },
   })
   mountedWrappers.push(wrapper)
   return wrapper
 }
 
+function findDialog(): HTMLElement | null {
+  return document.querySelector('.app > [role="dialog"]')
+}
+
+function getDialog(): DOMWrapper<HTMLElement> {
+  const dialog = findDialog()
+  if (!(dialog instanceof HTMLElement)) throw new Error('settings dialog not found in .app')
+  return new DOMWrapper(dialog)
+}
+
 afterEach(() => {
   for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
+  for (const host of mountHosts.splice(0)) host.remove()
+  vi.restoreAllMocks()
 })
 
 describe('ConstellationSettings', () => {
@@ -34,11 +52,12 @@ describe('ConstellationSettings', () => {
 
     await button.trigger('click')
     expect(button.attributes('aria-expanded')).toBe('true')
-    expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Constellation settings')
-    expect(document.activeElement).toBe(wrapper.get('input[data-settings-preview-lines]').element)
+    const dialog = getDialog()
+    expect(dialog.attributes('aria-label')).toBe('Constellation settings')
+    expect(document.activeElement).toBe(dialog.get('input[data-settings-preview-lines]').element)
 
-    await wrapper.get('input[data-settings-preview-lines]').trigger('keydown.escape')
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await dialog.get('input[data-settings-preview-lines]').trigger('keydown.escape')
+    expect(findDialog()).toBeNull()
     expect(document.activeElement).toBe(button.element)
   })
 
@@ -50,7 +69,7 @@ describe('ConstellationSettings', () => {
     document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(findDialog()).toBeNull()
     expect(document.activeElement).toBe(button.element)
   })
 
@@ -59,59 +78,62 @@ describe('ConstellationSettings', () => {
     const button = wrapper.get('button[aria-haspopup="dialog"]')
     await button.trigger('click')
 
-    await wrapper.get('button[data-settings-close]').trigger('click')
+    await getDialog().get('button[data-settings-close]').trigger('click')
 
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(findDialog()).toBeNull()
     expect(document.activeElement).toBe(button.element)
   })
 
   it('reflects stem and figure-line props and emits stem, line, and depth changes', async () => {
     const wrapper = mountSettings(false, 'compressed', true)
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+    const dialog = getDialog()
 
-    const previewLines = wrapper.get('input[data-settings-preview-lines]')
+    const previewLines = dialog.get('input[data-settings-preview-lines]')
     expect((previewLines.element as HTMLInputElement).checked).toBe(true)
     await previewLines.setValue(false)
 
-    const stems = wrapper.get('input[data-settings-stems]')
+    const stems = dialog.get('input[data-settings-stems]')
     expect((stems.element as HTMLInputElement).checked).toBe(false)
     await stems.setValue(true)
 
-    const trueScale = wrapper.get('input[type="radio"][value="true"]')
+    const trueScale = dialog.get('input[type="radio"][value="true"]')
     await trueScale.setValue()
 
     expect(wrapper.emitted('update:preview-figure-lines')).toEqual([[false]])
     expect(wrapper.emitted('update:show-stems')).toEqual([[true]])
     expect(wrapper.emitted('update:depth-mode')).toEqual([['true']])
-    expect(wrapper.text()).toContain('Preserves physical distance')
-    expect(wrapper.text()).toContain('Brings distant stars closer')
-    expect(wrapper.text()).toContain('Preview figure lines')
+    expect(dialog.text()).toContain('Preserves physical distance')
+    expect(dialog.text()).toContain('Brings distant stars closer')
+    expect(dialog.text()).toContain('Preview figure lines')
   })
 
   it('reflects drag-mode props and emits inverted mouse controls', async () => {
     const wrapper = mountSettings(false, 'compressed', true, 'normal')
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+    const dialog = getDialog()
 
-    const normal = wrapper.get('input[data-settings-drag-mode][value="normal"]')
-    const inverted = wrapper.get('input[data-settings-drag-mode][value="inverted"]')
+    const normal = dialog.get('input[data-settings-drag-mode][value="normal"]')
+    const inverted = dialog.get('input[data-settings-drag-mode][value="inverted"]')
     expect((normal.element as HTMLInputElement).checked).toBe(true)
     expect((inverted.element as HTMLInputElement).checked).toBe(false)
 
     await inverted.setValue()
 
     expect(wrapper.emitted('update:drag-mode')).toEqual([['inverted']])
-    expect(wrapper.text()).toContain('Mouse controls')
-    expect(wrapper.text()).toContain('Dragging moves the sky with your cursor')
-    expect(wrapper.text()).toContain('Dragging moves the sky against your cursor')
+    expect(dialog.text()).toContain('Mouse controls')
+    expect(dialog.text()).toContain('Dragging moves the sky with your cursor')
+    expect(dialog.text()).toContain('Dragging moves the sky against your cursor')
   })
 
   it('shows source links, licenses, revisions, and no velocity control', async () => {
     const wrapper = mountSettings()
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+    const dialog = getDialog()
 
-    const links = wrapper.findAll('a')
+    const links = dialog.findAll('a')
     for (const attribution of CONSTELLATION_ATTRIBUTIONS) {
-      expect(wrapper.text()).toContain(attribution.license)
+      expect(dialog.text()).toContain(attribution.license)
       expect(links.some((link) => link.attributes('href') === attribution.sourceUrl)).toBe(true)
       if (attribution.sourcePageUrl) {
         const detailsLink = links.find(
@@ -119,8 +141,63 @@ describe('ConstellationSettings', () => {
         )
         expect(detailsLink?.text()).toBe('Details')
       }
-      if (attribution.revision) expect(wrapper.text()).toContain(attribution.revision)
+      if (attribution.revision) expect(dialog.text()).toContain(attribution.revision)
     }
-    expect(wrapper.text().toLowerCase()).not.toContain('velocity')
+    expect(dialog.text().toLowerCase()).not.toContain('velocity')
+  })
+
+  it('teleports the popup into .app so page overflow cannot clip it', async () => {
+    const wrapper = mountSettings()
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+
+    expect(wrapper.find('.constellation-settings [role="dialog"]').exists()).toBe(false)
+    const dialog = findDialog()
+    expect(dialog).toBeTruthy()
+    expect(dialog?.getAttribute('aria-label')).toBe('Constellation settings')
+  })
+
+  it('keeps the teleported popup fully within the viewport with scroll overflow', async () => {
+    const wrapper = mountSettings()
+    const button = wrapper.get('button[aria-haspopup="dialog"]')
+    vi.spyOn(button.element as HTMLButtonElement, 'getBoundingClientRect').mockReturnValue({
+      x: 800,
+      y: 80,
+      top: 80,
+      right: 980,
+      bottom: 112,
+      left: 800,
+      width: 180,
+      height: 32,
+      toJSON() {
+        return {}
+      },
+    })
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1000 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 })
+
+    await button.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const dialog = findDialog()
+    expect(dialog).toBeTruthy()
+    expect(dialog?.style.position).toBe('fixed')
+    expect(dialog?.style.overflowY).toBe('auto')
+
+    const top = Number.parseFloat(dialog!.style.top)
+    const maxHeight = Number.parseFloat(dialog!.style.maxHeight)
+    expect(top + maxHeight).toBeLessThanOrEqual(400)
+    expect(maxHeight).toBeGreaterThan(0)
+  })
+
+  it('does not close when clicking inside the teleported popup', async () => {
+    const wrapper = mountSettings()
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+
+    const dialog = findDialog()
+    expect(dialog).toBeTruthy()
+    dialog!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(findDialog()).toBeTruthy()
   })
 })

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, useId, type CSSProperties } from 'vue'
 import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
 import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
 import type { ConstellationDragMode } from './constellationDragControls.ts'
+import { placeSettingsPopup } from './constellationSettingsPlacement.ts'
 
 defineProps<{
   showStems: boolean
@@ -20,13 +21,42 @@ const emit = defineEmits<{
 
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
+const popup = ref<HTMLElement | null>(null)
 const firstControl = ref<HTMLInputElement | null>(null)
 const isOpen = ref(false)
+const popupStyle = ref<CSSProperties>({})
 const popupId = `constellation-settings-${useId()}`
 
-function open(): void {
+function rootFontSizePx(): number {
+  return Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+}
+
+function updatePopupPosition(): void {
+  if (!trigger.value) return
+  const rem = rootFontSizePx()
+  const placement = placeSettingsPopup({
+    trigger: trigger.value.getBoundingClientRect(),
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    margin: rem, // $spacing-md
+    gap: rem * 0.5, // $spacing-sm
+    preferredWidth: rem * 22,
+  })
+  popupStyle.value = {
+    position: 'fixed',
+    top: `${placement.top}px`,
+    left: `${placement.left}px`,
+    width: `${placement.width}px`,
+    maxHeight: `${placement.maxHeight}px`,
+    overflowY: 'auto',
+  }
+}
+
+async function open(): Promise<void> {
   isOpen.value = true
-  void nextTick(() => firstControl.value?.focus())
+  await nextTick()
+  updatePopupPosition()
+  firstControl.value?.focus()
 }
 
 function close(restoreFocus = true): void {
@@ -37,7 +67,7 @@ function close(restoreFocus = true): void {
 
 function toggle(): void {
   if (isOpen.value) close()
-  else open()
+  else void open()
 }
 
 function isFocusablePointerTarget(target: EventTarget | null): boolean {
@@ -48,9 +78,14 @@ function isFocusablePointerTarget(target: EventTarget | null): boolean {
 }
 
 function handleDocumentPointerDown(event: PointerEvent): void {
-  if (isOpen.value && !root.value?.contains(event.target as Node)) {
-    close(!isFocusablePointerTarget(event.target))
-  }
+  if (!isOpen.value) return
+  const target = event.target as Node
+  if (root.value?.contains(target) || popup.value?.contains(target)) return
+  close(!isFocusablePointerTarget(event.target))
+}
+
+function handleViewportChange(): void {
+  if (isOpen.value) updatePopupPosition()
 }
 
 function emitStemChange(event: Event): void {
@@ -69,8 +104,17 @@ function emitDragModeChange(event: Event): void {
   emit('update:drag-mode', (event.target as HTMLInputElement).value as ConstellationDragMode)
 }
 
-onMounted(() => document.addEventListener('pointerdown', handleDocumentPointerDown))
-onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocumentPointerDown))
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointerDown)
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
+})
 </script>
 
 <template>
@@ -88,134 +132,144 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
       Settings
     </button>
 
-    <section
-      v-if="isOpen"
-      :id="popupId"
-      class="constellation-settings__popup"
-      role="dialog"
-      aria-label="Constellation settings"
-    >
-      <div class="constellation-settings__heading">
-        <h2>Constellation settings</h2>
-        <button
-          type="button"
-          class="constellation-settings__close"
-          data-settings-close
-          @click="close()"
-        >
-          Close
-        </button>
-      </div>
+    <Teleport to=".app">
+      <section
+        v-if="isOpen"
+        :id="popupId"
+        ref="popup"
+        class="constellation-settings__popup"
+        role="dialog"
+        aria-label="Constellation settings"
+        :style="popupStyle"
+        @keydown.escape.stop.prevent="close()"
+      >
+        <div class="constellation-settings__heading">
+          <h2>Constellation settings</h2>
+          <button
+            type="button"
+            class="constellation-settings__close"
+            data-settings-close
+            @click="close()"
+          >
+            Close
+          </button>
+        </div>
 
-      <label class="constellation-settings__check">
-        <input
-          ref="firstControl"
-          type="checkbox"
-          data-settings-preview-lines
-          :checked="previewFigureLines"
-          @change="emitPreviewLinesChange"
-        />
-        <span>
-          <strong>Preview figure lines on hover</strong>
-          <small>Show stick-figure lines when hovering a constellation in the list or sky.</small>
-        </span>
-      </label>
-
-      <label class="constellation-settings__check">
-        <input type="checkbox" data-settings-stems :checked="showStems" @change="emitStemChange" />
-        <span>
-          <strong>Projection stems</strong>
-          <small>Connect placed objects to the reference plane.</small>
-        </span>
-      </label>
-
-      <fieldset>
-        <legend>Mouse controls</legend>
-        <label class="constellation-settings__choice">
+        <label class="constellation-settings__check">
           <input
-            type="radio"
-            name="constellation-drag-mode"
-            data-settings-drag-mode
-            value="normal"
-            :checked="dragMode === 'normal'"
-            @change="emitDragModeChange"
+            ref="firstControl"
+            type="checkbox"
+            data-settings-preview-lines
+            :checked="previewFigureLines"
+            @change="emitPreviewLinesChange"
           />
           <span>
-            <strong>Normal</strong>
-            <small>Dragging moves the sky with your cursor.</small>
+            <strong>Preview figure lines on hover</strong>
+            <small>Show stick-figure lines when hovering a constellation in the list or sky.</small>
           </span>
         </label>
-        <label class="constellation-settings__choice">
-          <input
-            type="radio"
-            name="constellation-drag-mode"
-            data-settings-drag-mode
-            value="inverted"
-            :checked="dragMode === 'inverted'"
-            @change="emitDragModeChange"
-          />
-          <span>
-            <strong>Inverted</strong>
-            <small>Dragging moves the sky against your cursor.</small>
-          </span>
-        </label>
-      </fieldset>
 
-      <fieldset>
-        <legend>Depth</legend>
-        <label class="constellation-settings__choice">
+        <label class="constellation-settings__check">
           <input
-            type="radio"
-            name="constellation-depth"
-            value="compressed"
-            :checked="depthMode === 'compressed'"
-            @change="emitDepthChange"
+            type="checkbox"
+            data-settings-stems
+            :checked="showStems"
+            @change="emitStemChange"
           />
           <span>
-            <strong>Compressed depth</strong>
-            <small>Brings distant stars closer while preserving their order.</small>
+            <strong>Projection stems</strong>
+            <small>Connect placed objects to the reference plane.</small>
           </span>
         </label>
-        <label class="constellation-settings__choice">
-          <input
-            type="radio"
-            name="constellation-depth"
-            value="true"
-            :checked="depthMode === 'true'"
-            @change="emitDepthChange"
-          />
-          <span>
-            <strong>True scale</strong>
-            <small>Preserves physical distance in every direction.</small>
-          </span>
-        </label>
-      </fieldset>
 
-      <details class="constellation-settings__credits">
-        <summary>Data credits</summary>
-        <ul>
-          <li v-for="attribution in CONSTELLATION_ATTRIBUTIONS" :key="attribution.label">
-            <strong>{{ attribution.label }}</strong>
-            <span>{{ attribution.attribution }}</span>
+        <fieldset>
+          <legend>Mouse controls</legend>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-drag-mode"
+              data-settings-drag-mode
+              value="normal"
+              :checked="dragMode === 'normal'"
+              @change="emitDragModeChange"
+            />
             <span>
-              <a :href="attribution.sourceUrl" target="_blank" rel="noreferrer">Source</a>
-              <a
-                v-if="attribution.sourcePageUrl"
-                :href="attribution.sourcePageUrl"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Details
-              </a>
-              · {{ attribution.license
-              }}<template v-if="attribution.revision">
-                · revision {{ attribution.revision }}</template
-              >
+              <strong>Normal</strong>
+              <small>Dragging moves the sky with your cursor.</small>
             </span>
-          </li>
-        </ul>
-      </details>
-    </section>
+          </label>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-drag-mode"
+              data-settings-drag-mode
+              value="inverted"
+              :checked="dragMode === 'inverted'"
+              @change="emitDragModeChange"
+            />
+            <span>
+              <strong>Inverted</strong>
+              <small>Dragging moves the sky against your cursor.</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Depth</legend>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-depth"
+              value="compressed"
+              :checked="depthMode === 'compressed'"
+              @change="emitDepthChange"
+            />
+            <span>
+              <strong>Compressed depth</strong>
+              <small>Brings distant stars closer while preserving their order.</small>
+            </span>
+          </label>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-depth"
+              value="true"
+              :checked="depthMode === 'true'"
+              @change="emitDepthChange"
+            />
+            <span>
+              <strong>True scale</strong>
+              <small>Preserves physical distance in every direction.</small>
+            </span>
+          </label>
+        </fieldset>
+
+        <details class="constellation-settings__credits" @toggle="updatePopupPosition">
+          <summary>Data credits</summary>
+          <ul>
+            <li v-for="attribution in CONSTELLATION_ATTRIBUTIONS" :key="attribution.label">
+              <strong>{{ attribution.label }}</strong>
+              <span>{{ attribution.attribution }}</span>
+              <span>
+                <a :href="attribution.sourceUrl" target="_blank" rel="noreferrer">Source</a>
+                <a
+                  v-if="attribution.sourcePageUrl"
+                  :href="attribution.sourcePageUrl"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Details
+                </a>
+                · {{ attribution.license
+                }}<template v-if="attribution.revision">
+                  · revision {{ attribution.revision }}</template
+                >
+              </span>
+            </li>
+          </ul>
+        </details>
+      </section>
+    </Teleport>
   </div>
 </template>
 
@@ -249,16 +303,15 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 }
 
 .constellation-settings__popup {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + #{$spacing-sm});
-  right: 0;
-  width: min(22rem, calc(100vw - #{$spacing-md * 2}));
+  z-index: 1100;
+  box-sizing: border-box;
   padding: $spacing-md;
+  color: #fff4d6;
   background: color-mix(in srgb, #02040a 96%, transparent);
   border: 1px solid color-mix(in srgb, #73d5e8 38%, transparent);
   border-radius: $radius-md;
   box-shadow: 0 0.85rem 2rem rgb(0 0 0 / 38%);
+  font-family: $font-sans;
 }
 
 .constellation-settings__heading {
@@ -378,19 +431,6 @@ legend {
 
   a {
     color: #73d5e8;
-  }
-}
-
-@media (max-width: 56rem) {
-  .constellation-settings__popup {
-    position: fixed;
-    top: auto;
-    right: $spacing-md;
-    bottom: $spacing-md;
-    left: $spacing-md;
-    width: auto;
-    max-height: calc(100vh - #{$spacing-md * 2});
-    overflow-y: auto;
   }
 }
 
