@@ -28,7 +28,8 @@ import {
   overviewDragDelta,
   type ConstellationDragMode,
 } from './constellationDragControls.ts'
-import { canRebuildInPlace, type SceneMode } from './constellationSceneLifecycle.ts'
+import { sliceOrbitMinDistance, syncGeometryBounds } from './constellationSceneBounds.ts'
+import { canRebuildInPlace, shouldAnimateCamera, type SceneMode } from './constellationSceneLifecycle.ts'
 import {
   FOCUS_GOLD_COLOR,
   SLICE_GEOMETRY_COLOR,
@@ -711,6 +712,8 @@ function applyMorphProgress(morphT: number): void {
     }
     morphable.attribute.needsUpdate = true
   }
+  // Position attributes moved; refresh spheres so frustum culling tracks the slice.
+  if (selectionGroup) syncGeometryBounds(selectionGroup)
 }
 
 function applyTransitionProgress(t: number): void {
@@ -744,7 +747,7 @@ function applyTransitionProgress(t: number): void {
     overviewMaterial.uniforms.uOpacity.value =
       overviewOpacityStart + (overviewOpacityEnd - overviewOpacityStart) * eased
   }
-  if (camera) {
+  if (camera && shouldAnimateCamera(sceneMode)) {
     camera.position.lerpVectors(camStart, camEnd, eased)
     const look = new Vector3().lerpVectors(lookStart, lookEnd, eased)
     camera.lookAt(look)
@@ -787,6 +790,8 @@ function enableControls(): void {
     controls.addEventListener('change', requestRender)
   }
   controls.rotateSpeed = orbitRotateSpeed(props.dragMode)
+  controls.minDistance = sliceOrbitMinDistance(camera.near, SLICE_TARGET_RADIUS)
+  controls.maxDistance = SLICE_TARGET_RADIUS * 20
   controls.target.set(0, 0, 0)
   controls.enabled = true
   controls.update()

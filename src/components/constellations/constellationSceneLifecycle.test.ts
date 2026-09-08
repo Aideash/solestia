@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { canRebuildInPlace, type SceneMode } from './constellationSceneLifecycle.ts'
+import {
+  canRebuildInPlace,
+  shouldAnimateCamera,
+  type SceneMode,
+} from './constellationSceneLifecycle.ts'
 
 describe('constellation scene lifecycle policy', () => {
   it('remaps only a settled slice in place', () => {
@@ -11,5 +15,12 @@ describe('constellation scene lifecycle policy', () => {
     for (const mode of deferred) {
       expect(canRebuildInPlace(mode)).toBe(false)
     }
+  })
+
+  it('animates the camera only during fly-in and fly-out', () => {
+    expect(shouldAnimateCamera('toSlice')).toBe(true)
+    expect(shouldAnimateCamera('toOverview')).toBe(true)
+    expect(shouldAnimateCamera('slice')).toBe(false)
+    expect(shouldAnimateCamera('overview')).toBe(false)
   })
 })

@@ -17,3 +17,13 @@ export type SceneMode = 'overview' | 'toSlice' | 'slice' | 'toOverview'
 export function canRebuildInPlace(mode: SceneMode): boolean {
   return mode === 'slice'
 }
+
+/**
+ * Whether `applyTransitionProgress` should lerp the camera. Only the fly-in and
+ * fly-out own camera motion. A settled-slice remap (depth mode / stems) must
+ * leave the user's orbit pose alone — otherwise toggling Depth looks like it
+ * "fixes" a zoom bug by secretly snapping the camera home.
+ */
+export function shouldAnimateCamera(mode: SceneMode): boolean {
+  return mode === 'toSlice' || mode === 'toOverview'
+}
