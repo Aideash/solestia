@@ -6,11 +6,13 @@ import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
 defineProps<{
   showStems: boolean
   depthMode: ConstellationDepthMode
+  previewFigureLines: boolean
 }>()
 
 const emit = defineEmits<{
   'update:show-stems': [value: boolean]
   'update:depth-mode': [value: ConstellationDepthMode]
+  'update:preview-figure-lines': [value: boolean]
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -50,6 +52,10 @@ function handleDocumentPointerDown(event: PointerEvent): void {
 
 function emitStemChange(event: Event): void {
   emit('update:show-stems', (event.target as HTMLInputElement).checked)
+}
+
+function emitPreviewLinesChange(event: Event): void {
+  emit('update:preview-figure-lines', (event.target as HTMLInputElement).checked)
 }
 
 function emitDepthChange(event: Event): void {
@@ -95,7 +101,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
       </div>
 
       <label class="constellation-settings__check">
-        <input ref="firstControl" type="checkbox" :checked="showStems" @change="emitStemChange" />
+        <input
+          ref="firstControl"
+          type="checkbox"
+          data-settings-preview-lines
+          :checked="previewFigureLines"
+          @change="emitPreviewLinesChange"
+        />
+        <span>
+          <strong>Preview figure lines on hover</strong>
+          <small>Show stick-figure lines when hovering a constellation in the list or sky.</small>
+        </span>
+      </label>
+
+      <label class="constellation-settings__check">
+        <input type="checkbox" data-settings-stems :checked="showStems" @change="emitStemChange" />
         <span>
           <strong>Projection stems</strong>
           <small>Connect placed objects to the reference plane.</small>

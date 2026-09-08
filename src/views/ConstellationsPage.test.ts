@@ -12,6 +12,8 @@ vi.mock('../components/constellations/ConstellationScene.vue', () => ({
       selectedId: { type: String, default: null },
       showStems: { type: Boolean, default: false },
       depthMode: { type: String, default: 'compressed' },
+      previewFigureLines: { type: Boolean, default: true },
+      listPreviewId: { type: String, default: null },
     },
     emits: ['select', 'scale-change'],
     template: '<div class="scene-contract" />',
@@ -101,7 +103,7 @@ describe('ConstellationsPage', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
-  it('starts compressed without stems and flows settings changes into the scene and legend', async () => {
+  it('starts compressed without stems, with figure-line preview, and flows settings into the scene', async () => {
     const { wrapper } = await mountPage('/constellation/orion')
     const scene = wrapper.getComponent(ConstellationScene)
 
@@ -109,6 +111,7 @@ describe('ConstellationsPage', () => {
       selectedId: 'orion',
       showStems: false,
       depthMode: 'compressed',
+      previewFigureLines: true,
     })
 
     scene.vm.$emit('scale-change', {
@@ -119,16 +122,29 @@ describe('ConstellationsPage', () => {
       unavailableCount: 2,
     })
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
-    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('input[data-settings-preview-lines]').setValue(false)
+    await wrapper.get('input[data-settings-stems]').setValue(true)
     await wrapper.get('input[type="radio"][value="true"]').setValue()
 
-    expect(scene.props()).toMatchObject({ showStems: true, depthMode: 'true' })
+    expect(scene.props()).toMatchObject({
+      showStems: true,
+      depthMode: 'true',
+      previewFigureLines: false,
+    })
     expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
       'True scale',
     )
     expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
       '2 stars omitted',
     )
+  })
+
+  it('forwards list hover into the scene preview prop', async () => {
+    const { wrapper } = await mountPage()
+    const scene = wrapper.getComponent(ConstellationScene)
+
+    await wrapper.get('[data-constellation-id="orion"]').trigger('mousemove')
+    expect(scene.props('listPreviewId')).toBe('orion')
   })
 
   it('keeps one mounted page and scene instance across overview → detail → overview', async () => {

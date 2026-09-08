@@ -5,10 +5,14 @@ import ConstellationSettings from './ConstellationSettings.vue'
 
 const mountedWrappers: VueWrapper[] = []
 
-function mountSettings(showStems = false, depthMode: 'compressed' | 'true' = 'compressed') {
+function mountSettings(
+  showStems = false,
+  depthMode: 'compressed' | 'true' = 'compressed',
+  previewFigureLines = true,
+) {
   const wrapper = mount(ConstellationSettings, {
     attachTo: document.body,
-    props: { showStems, depthMode },
+    props: { showStems, depthMode, previewFigureLines },
   })
   mountedWrappers.push(wrapper)
   return wrapper
@@ -29,9 +33,11 @@ describe('ConstellationSettings', () => {
     await button.trigger('click')
     expect(button.attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Constellation settings')
-    expect(document.activeElement).toBe(wrapper.get('input[type="checkbox"]').element)
+    expect(document.activeElement).toBe(
+      wrapper.get('input[data-settings-preview-lines]').element,
+    )
 
-    await wrapper.get('input[type="checkbox"]').trigger('keydown.escape')
+    await wrapper.get('input[data-settings-preview-lines]').trigger('keydown.escape')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     expect(document.activeElement).toBe(button.element)
   })
@@ -59,21 +65,27 @@ describe('ConstellationSettings', () => {
     expect(document.activeElement).toBe(button.element)
   })
 
-  it('reflects the stem prop and emits stem and depth changes', async () => {
-    const wrapper = mountSettings(false, 'compressed')
+  it('reflects stem and figure-line props and emits stem, line, and depth changes', async () => {
+    const wrapper = mountSettings(false, 'compressed', true)
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
 
-    const stems = wrapper.get('input[type="checkbox"]')
+    const previewLines = wrapper.get('input[data-settings-preview-lines]')
+    expect((previewLines.element as HTMLInputElement).checked).toBe(true)
+    await previewLines.setValue(false)
+
+    const stems = wrapper.get('input[data-settings-stems]')
     expect((stems.element as HTMLInputElement).checked).toBe(false)
     await stems.setValue(true)
 
     const trueScale = wrapper.get('input[type="radio"][value="true"]')
     await trueScale.setValue()
 
+    expect(wrapper.emitted('update:preview-figure-lines')).toEqual([[false]])
     expect(wrapper.emitted('update:show-stems')).toEqual([[true]])
     expect(wrapper.emitted('update:depth-mode')).toEqual([['true']])
     expect(wrapper.text()).toContain('Preserves physical distance')
     expect(wrapper.text()).toContain('Brings distant stars closer')
+    expect(wrapper.text()).toContain('Preview figure lines')
   })
 
   it('shows source links, licenses, revisions, and no velocity control', async () => {

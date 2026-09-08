@@ -7,8 +7,10 @@ import type { Vec3 } from '../src/lib/kepler.ts'
 import {
   MAX_STAR_POINT_SIZE,
   MIN_STAR_POINT_SIZE,
+  buildOverviewFigureEdges,
   buildOverviewStarField,
   buildSelectionModel,
+  collectNameWorthyPicks,
   collectStemFootSpots,
   spectralColor,
   starPointSize,
@@ -465,4 +467,40 @@ for (const landmark of CONSTELLATION_LANDMARKS) {
 
 console.log(
   `ok  constellation scene model: ${overview.count} overview stars, Orion ${figureStars.length} figure stars / ${orion.edges.length} edges / ${orion.landmarks.length} landmarks, depth modes and stems verified`,
+)
+
+// ---------------------------------------------------------------------------
+// Overview figure preview and name-worthy picks
+// ---------------------------------------------------------------------------
+const orionEdges = buildOverviewFigureEdges('orion')
+assert(orionEdges, 'Orion must expose overview figure edges')
+assert(orionEdges.edgeCount === orion.edges.length, 'overview edge count must match the figure')
+assert(
+  orionEdges.positions.length === orionEdges.edgeCount * 6,
+  'overview edge buffer must store two unit endpoints per edge',
+)
+
+const emptyEdges = buildOverviewFigureEdges('mensa')
+assert(emptyEdges === null, 'empty IAU figures must not invent overview edges')
+
+const orionNamed = collectNameWorthyPicks(orion)
+assert(
+  orionNamed.some((pick) => pick.name === 'Betelgeuse'),
+  'Orion name-worthy picks must include Betelgeuse',
+)
+assert(
+  orionNamed.some((pick) => pick.name === 'Orion Nebula'),
+  'Orion name-worthy picks must include the Orion Nebula',
+)
+assert(
+  orionNamed.every((pick) => pick.name.length > 0 && pick.detailLines.length > 0),
+  'name-worthy picks must carry a name and at least one detail line',
+)
+assert(
+  !orionNamed.some((pick) => /^HD\b/i.test(pick.name) || /^WASP/i.test(pick.name)),
+  'catalog-only designations must not appear as name-worthy picks',
+)
+
+console.log(
+  `ok  constellation hover helpers: Orion ${orionEdges.edgeCount} overview edges, ${orionNamed.length} name-worthy picks`,
 )

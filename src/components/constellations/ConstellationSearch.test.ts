@@ -105,6 +105,21 @@ describe('ConstellationSearch', () => {
     expect(wrapper.emitted('select')).toEqual([[selectedId]])
   })
 
+  it('emits hover for list mouse movement and keyboard focus, and clears on leave', async () => {
+    const wrapper = mountSearch()
+    const input = wrapper.get('input[role="combobox"]')
+
+    await wrapper.get('[data-constellation-id="orion"]').trigger('mousemove')
+    expect(wrapper.emitted('hover')).toContainEqual(['orion'])
+
+    await input.trigger('keydown.end')
+    const lastId = wrapper.findAll('[role="option"]').at(-1)?.attributes('data-constellation-id')
+    expect(wrapper.emitted('hover')?.at(-1)).toEqual([lastId])
+
+    await wrapper.get('.constellation-search__results').trigger('mouseleave')
+    expect(wrapper.emitted('hover')?.at(-1)).toEqual([null])
+  })
+
   it('clears and closes results on Escape and reports no matches', async () => {
     const wrapper = mountSearch()
     const input = wrapper.get('input[role="combobox"]')

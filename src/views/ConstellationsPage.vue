@@ -12,6 +12,8 @@ import type { ConstellationDepthMode } from '../lib/constellationGeometry.ts'
 const route = useRoute()
 const router = useRouter()
 const showStems = ref(false)
+const previewFigureLines = ref(true)
+const listPreviewId = ref<string | null>(null)
 const depthMode = ref<ConstellationDepthMode>('compressed')
 const scale = ref<ConstellationScaleData | null>(null)
 const invalidMessage = ref<string | null>(null)
@@ -74,7 +76,11 @@ function dismissInvalidMessage(): void {
 
     <div class="constellations-page__layout">
       <aside class="constellations-page__search">
-        <ConstellationSearch :active-id="selectedId" @select="selectConstellation" />
+        <ConstellationSearch
+          :active-id="selectedId"
+          @select="selectConstellation"
+          @hover="listPreviewId = $event"
+        />
       </aside>
 
       <section class="constellations-page__stage" aria-label="Constellation explorer">
@@ -82,6 +88,8 @@ function dismissInvalidMessage(): void {
           :selected-id="selectedId"
           :show-stems="showStems"
           :depth-mode="depthMode"
+          :preview-figure-lines="previewFigureLines"
+          :list-preview-id="listPreviewId"
           @select="selectConstellation"
           @scale-change="scale = $event"
         />
@@ -102,7 +110,11 @@ function dismissInvalidMessage(): void {
         </div>
 
         <div class="constellations-page__settings">
-          <ConstellationSettings v-model:show-stems="showStems" v-model:depth-mode="depthMode" />
+          <ConstellationSettings
+            v-model:show-stems="showStems"
+            v-model:depth-mode="depthMode"
+            v-model:preview-figure-lines="previewFigureLines"
+          />
         </div>
         <div v-if="scale" class="constellations-page__scale">
           <ConstellationScaleLegend

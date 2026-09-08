@@ -12,6 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [id: string]
+  hover: [id: string | null]
 }>()
 
 function catalogIndex(id: string | null): number {
@@ -72,16 +73,30 @@ function openResults(): void {
   if (wasClosed) void scrollActiveIntoView()
 }
 
+function emitHover(id: string | null): void {
+  emit('hover', id)
+}
+
+function setActiveIndex(index: number, announceHover: boolean): void {
+  activeIndex.value = index
+  if (!announceHover || !isOpen.value) return
+  emitHover(results.value[index]?.id ?? null)
+}
+
 function moveActive(direction: 1 | -1): void {
   openResults()
   if (results.value.length === 0) return
-  activeIndex.value = (activeIndex.value + direction + results.value.length) % results.value.length
+  setActiveIndex(
+    (activeIndex.value + direction + results.value.length) % results.value.length,
+    true,
+  )
   void scrollActiveIntoView()
 }
 
 function selectConstellation(constellation: Constellation): void {
   if (!constellationById(constellation.id)) return
   activeIndex.value = results.value.findIndex(({ id }) => id === constellation.id)
+  emitHover(null)
   emit('select', constellation.id)
   void scrollActiveIntoView()
 }
@@ -94,7 +109,7 @@ function selectActive(): void {
 function setBoundary(position: 'first' | 'last'): void {
   openResults()
   if (results.value.length === 0) return
-  activeIndex.value = position === 'first' ? 0 : results.value.length - 1
+  setActiveIndex(position === 'first' ? 0 : results.value.length - 1, true)
   void scrollActiveIntoView()
 }
 
@@ -103,11 +118,13 @@ function clearAndClose(): void {
   query.value = ''
   normalizeActiveIndex()
   isOpen.value = false
+  emitHover(null)
 }
 
 function toggleDisclosure(): void {
   if (isOpen.value) {
     isOpen.value = false
+    emitHover(null)
   } else {
     openResults()
   }
@@ -117,7 +134,10 @@ function handleViewportChange(event: MediaQueryListEvent): void {
   if (event.matches) {
     // Entering narrow: fold away an empty, inactive search so the scene shows,
     // but leave an in-progress search (typed or with a selection) open.
-    if (query.value === '' && props.activeId === null) isOpen.value = false
+    if (query.value === '' && props.activeId === null) {
+      isOpen.value = false
+      emitHover(null)
+    }
   } else {
     // Entering wide: the rail is always available.
     isOpen.value = true
@@ -141,6 +161,10 @@ watch(
     void scrollActiveIntoView()
   },
 )
+
+watch(isOpen, (open) => {
+  if (!open) emitHover(null)
+})
 
 onMounted(() => {
   narrowMedia?.addEventListener('change', handleViewportChange)
@@ -188,7 +212,7 @@ onBeforeUnmount(() => {
       @keydown.escape.prevent="clearAndClose"
     />
 
-    <div v-if="isOpen" class="constellation-search__results">
+    <div v-if="isOpen" class="constellation-search__results" @mouseleave="emit('hover', null)">
       <ul
         v-if="results.length > 0"
         :id="listboxId"
@@ -210,7 +234,7 @@ onBeforeUnmount(() => {
           :data-constellation-id="constellation.id"
           @mousedown.prevent
           @click="selectConstellation(constellation)"
-          @mousemove="activeIndex = index"
+          @mousemove="setActiveIndex(index, true)"
         >
           <span>{{ constellation.name }}</span>
           <span class="constellation-search__abbr">{{ constellation.abbreviation }}</span>

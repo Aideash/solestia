@@ -21,16 +21,20 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
+import { constellationAtJ2000, unitDirectionToEquatorial } from '../../lib/constellationRegions.ts'
 import type { Vec3 } from '../../lib/kepler.ts'
 import { canRebuildInPlace, type SceneMode } from './constellationSceneLifecycle.ts'
 import {
   FOCUS_GOLD_COLOR,
   SLICE_GEOMETRY_COLOR,
+  buildOverviewFigureEdges,
   buildOverviewStarField,
   buildSelectionModel,
+  collectNameWorthyPicks,
   collectStemFootSpots,
   type ConstellationScaleData,
   type ConstellationSelectionModel,
+  type NameWorthyPick,
   type OverviewStarField,
 } from './constellationSceneModel.ts'
 
@@ -39,11 +43,15 @@ const props = withDefaults(
     selectedId?: string | null
     showStems?: boolean
     depthMode?: ConstellationDepthMode
+    previewFigureLines?: boolean
+    listPreviewId?: string | null
   }>(),
   {
     selectedId: null,
     showStems: false,
     depthMode: 'compressed',
+    previewFigureLines: true,
+    listPreviewId: null,
   },
 )
 
@@ -61,6 +69,7 @@ const CAMERA_FOV = 60
 const DRAG_THRESHOLD_PX = 6
 const CLICK_MAX_MS = 500
 const PICK_THRESHOLD = 1.6
+const NAME_PICK_THRESHOLD = 2.4
 const ROTATE_SPEED = 0.0045
 const MAX_PITCH = (85 * Math.PI) / 180
 
@@ -68,6 +77,12 @@ const MAX_PITCH = (85 * Math.PI) / 180
 const container = ref<HTMLDivElement | null>(null)
 const webglFailed = ref(false)
 const instructionsId = useId()
+const objectTooltip = ref<{
+  name: string
+  detailLines: readonly string[]
+  x: number
+  y: number
+} | null>(null)
 
 // --- Three.js state (deliberately non-reactive) ----------------------------
 // Three objects must never be wrapped in Vue reactivity, or their internal
@@ -89,9 +104,17 @@ let overviewMaterial: ShaderMaterial | null = null
 let hoverPoints: Points | null = null
 let hoverMaterial: ShaderMaterial | null = null
 
+// Overview stick-figure preview driven by list hover or sky-region hover.
+let previewLines: LineSegments | null = null
+let previewLineMaterial: LineBasicMaterial | null = null
+let previewConstellationId: string | null = null
+let regionPreviewId: string | null = null
+
 let selectionGroup: Group | null = null
 type Morphable = { attribute: Float32BufferAttribute; start: Float32Array; end: Float32Array }
 let morphables: Morphable[] = []
+let nameWorthyPicks: { pick: NameWorthyPick; world: Vector3 }[] = []
+let nameWorthyPoints: Points | null = null
 
 let rafId = 0
 let needsRender = false
@@ -257,6 +280,65 @@ function hideHover(): void {
   }
 }
 
+function clearObjectTooltip(): void {
+  if (objectTooltip.value !== null) objectTooltip.value = null
+}
+
+function disposePreviewLines(): void {
+  if (!previewLines) return
+  scene?.remove(previewLines)
+  previewLines.geometry.dispose()
+  previewLines = null
+  previewLineMaterial?.dispose()
+  previewLineMaterial = null
+  previewConstellationId = null
+}
+
+function setPreviewConstellation(id: string | null): void {
+  if (!props.previewFigureLines || sceneMode !== 'overview' || props.selectedId !== null) {
+    disposePreviewLines()
+    return
+  }
+  if (id === previewConstellationId) return
+  disposePreviewLines()
+  if (!id || !scene) return
+  const field = buildOverviewFigureEdges(id)
+  if (!field) return
+  const scaled = new Float32Array(field.positions.length)
+  for (let i = 0; i < field.positions.length; i++) scaled[i] = field.positions[i] * OVERVIEW_RADIUS
+  const geometry = new BufferGeometry()
+  geometry.setAttribute('position', new Float32BufferAttribute(scaled, 3))
+  previewLineMaterial = new LineBasicMaterial({
+    color: new Color(FOCUS_GOLD_COLOR),
+    transparent: true,
+    opacity: 0.85,
+  })
+  previewLines = new LineSegments(geometry, previewLineMaterial)
+  previewLines.name = `preview-edges-${id}`
+  scene.add(previewLines)
+  previewConstellationId = id
+  requestRender()
+}
+
+function syncPreviewFromSources(): void {
+  setPreviewConstellation(props.listPreviewId ?? regionPreviewId)
+}
+
+function pickRegionId(event: PointerEvent): string | null {
+  if (!raycaster || !camera) return null
+  const ndc = pointerToNdc(event)
+  if (!ndc) return null
+  raycaster.setFromCamera(ndc, camera)
+  const direction = raycaster.ray.direction
+  if (direction.lengthSq() < 1e-12) return null
+  const equatorial = unitDirectionToEquatorial({
+    x: direction.x,
+    y: direction.y,
+    z: direction.z,
+  })
+  return constellationAtJ2000(equatorial.raDeg, equatorial.decDeg)
+}
+
 // --- Selection construction ------------------------------------------------
 
 function frameBasis(model: ConstellationSelectionModel): {
@@ -314,6 +396,7 @@ function buildSelection(model: ConstellationSelectionModel): void {
   const group = new Group()
   group.name = `selection-${model.id}`
   morphables = []
+  nameWorthyPicks = []
 
   const { east, north, depth } = frameBasis(model)
   const centroid = model.centroidLocal
@@ -505,6 +588,44 @@ function buildSelection(model: ConstellationSelectionModel): void {
   const referenceOutline = buildReferencePlaneOutline(model, slicePoint, referenceColor)
   if (referenceOutline) group.add(referenceOutline)
 
+  const named = collectNameWorthyPicks(model)
+  if (named.length > 0) {
+    const geometry = new BufferGeometry()
+    const positions = new Float32Array(named.length * 3)
+    named.forEach((pick, index) => {
+      const world = slicePoint(pick.position)
+      positions[index * 3] = world.x
+      positions[index * 3 + 1] = world.y
+      positions[index * 3 + 2] = world.z
+      nameWorthyPicks.push({ pick, world: world.clone() })
+    })
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+    // Invisible pick helpers: sized for raycasting, fully transparent in the shader.
+    geometry.setAttribute(
+      'aColor',
+      new Float32BufferAttribute(makeColorArray(named.length, new Color(FOCUS_GOLD_COLOR)), 3),
+    )
+    geometry.setAttribute(
+      'aSize',
+      new Float32BufferAttribute(new Float32Array(named.length).fill(14), 1),
+    )
+    const material = new ShaderMaterial({
+      vertexShader: VERTEX_SHADER,
+      fragmentShader: FRAGMENT_SHADER,
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      uniforms: {
+        uPixelRatio: { value: renderer?.getPixelRatio() ?? 1 },
+        uSizeScale: { value: 1 },
+        uOpacity: { value: 0 },
+      },
+    })
+    nameWorthyPoints = new Points(geometry, material)
+    nameWorthyPoints.name = 'name-worthy-picks'
+    group.add(nameWorthyPoints)
+  }
+
   scene.add(group)
   selectionGroup = group
 }
@@ -535,6 +656,9 @@ function buildReferencePlaneOutline(
 function startSelectionTransition(model: ConstellationSelectionModel): void {
   if (!camera) return
   hideHover()
+  regionPreviewId = null
+  disposePreviewLines()
+  clearObjectTooltip()
   if (renderer) renderer.domElement.style.cursor = 'default'
   // A fresh build already reflects the current props, so drop any deferred remap.
   pendingRebuild = false
@@ -612,7 +736,9 @@ function finishTransition(): void {
     sceneMode = 'overview'
     pendingRebuild = false
     disposeSelection()
+    clearObjectTooltip()
     applyOverviewCamera()
+    syncPreviewFromSources()
   }
   requestRender()
 }
@@ -664,9 +790,15 @@ function pickSelectable(event: PointerEvent): { index: number; id: string } | nu
 }
 
 function updateHover(event: PointerEvent): void {
-  if (!hoverPoints || !overviewField || sceneMode !== 'overview') return
+  if (sceneMode !== 'overview') return
+
+  const regionId = pickRegionId(event)
+  regionPreviewId = regionId
+  if (renderer) renderer.domElement.style.cursor = regionId ? 'pointer' : 'grab'
+  syncPreviewFromSources()
+
+  if (!hoverPoints || !overviewField) return
   const hit = pickSelectable(event)
-  if (renderer) renderer.domElement.style.cursor = hit ? 'pointer' : 'grab'
   if (!hit) {
     hideHover()
     return
@@ -684,6 +816,44 @@ function updateHover(event: PointerEvent): void {
   requestRender()
 }
 
+function updateObjectTooltip(event: PointerEvent): void {
+  if (sceneMode !== 'slice') {
+    clearObjectTooltip()
+    return
+  }
+  if (!raycaster || !camera || !nameWorthyPoints || nameWorthyPicks.length === 0) {
+    clearObjectTooltip()
+    return
+  }
+  const ndc = pointerToNdc(event)
+  if (!ndc) {
+    clearObjectTooltip()
+    return
+  }
+  raycaster.setFromCamera(ndc, camera)
+  raycaster.params.Points = { threshold: NAME_PICK_THRESHOLD }
+  const hits = raycaster.intersectObject(nameWorthyPoints, false)
+  const hit = hits[0]
+  if (!hit || hit.index === undefined) {
+    clearObjectTooltip()
+    if (renderer) renderer.domElement.style.cursor = 'grab'
+    return
+  }
+  const entry = nameWorthyPicks[hit.index]
+  if (!entry || !container.value) {
+    clearObjectTooltip()
+    return
+  }
+  const rect = container.value.getBoundingClientRect()
+  objectTooltip.value = {
+    name: entry.pick.name,
+    detailLines: entry.pick.detailLines,
+    x: event.clientX - rect.left + 12,
+    y: event.clientY - rect.top + 12,
+  }
+  if (renderer) renderer.domElement.style.cursor = 'pointer'
+}
+
 function onPointerDown(event: PointerEvent): void {
   if (sceneMode !== 'overview') return
   hideHover()
@@ -697,6 +867,10 @@ function onPointerDown(event: PointerEvent): void {
 }
 
 function onPointerMove(event: PointerEvent): void {
+  if (sceneMode === 'slice') {
+    updateObjectTooltip(event)
+    return
+  }
   if (sceneMode !== 'overview') return
   if (dragging && event.pointerId === activePointerId) {
     const dx = event.clientX - pointerDownX
@@ -720,9 +894,17 @@ function onPointerUp(event: PointerEvent): void {
   dragging = false
   activePointerId = null
   if (wasClick && sceneMode === 'overview') {
-    const hit = pickSelectable(event)
-    if (hit !== null) emit('select', hit.id)
+    const regionId = pickRegionId(event)
+    if (regionId !== null) emit('select', regionId)
   }
+}
+
+function onPointerLeave(): void {
+  hideHover()
+  regionPreviewId = null
+  clearObjectTooltip()
+  if (sceneMode === 'overview') syncPreviewFromSources()
+  if (renderer && sceneMode === 'overview') renderer.domElement.style.cursor = 'grab'
 }
 
 // --- Resize and render loop ------------------------------------------------
@@ -846,6 +1028,7 @@ onMounted(() => {
   canvas.addEventListener('pointermove', onPointerMove)
   canvas.addEventListener('pointerup', onPointerUp)
   canvas.addEventListener('pointercancel', onPointerUp)
+  canvas.addEventListener('pointerleave', onPointerLeave)
 
   resizeObserver = new ResizeObserver(() => resizeToContainer())
   resizeObserver.observe(host)
@@ -890,7 +1073,24 @@ function disposeSelection(): void {
   })
   selectionGroup = null
   morphables = []
+  nameWorthyPicks = []
+  nameWorthyPoints = null
 }
+
+watch(
+  () => props.listPreviewId,
+  () => {
+    if (sceneMode === 'overview') syncPreviewFromSources()
+  },
+)
+
+watch(
+  () => props.previewFigureLines,
+  (enabled) => {
+    if (!enabled) disposePreviewLines()
+    else if (sceneMode === 'overview') syncPreviewFromSources()
+  },
+)
 
 onBeforeUnmount(() => {
   if (rafId) cancelAnimationFrame(rafId)
@@ -902,6 +1102,7 @@ onBeforeUnmount(() => {
     canvas.removeEventListener('pointermove', onPointerMove)
     canvas.removeEventListener('pointerup', onPointerUp)
     canvas.removeEventListener('pointercancel', onPointerUp)
+    canvas.removeEventListener('pointerleave', onPointerLeave)
   }
 
   resizeObserver?.disconnect()
@@ -914,6 +1115,7 @@ onBeforeUnmount(() => {
   }
 
   disposeSelection()
+  disposePreviewLines()
 
   if (hoverPoints) {
     scene?.remove(hoverPoints)
@@ -945,11 +1147,20 @@ onBeforeUnmount(() => {
 <template>
   <div class="constellation-scene">
     <div ref="container" class="constellation-scene__canvas" />
+    <div
+      v-if="objectTooltip"
+      class="constellation-scene__tooltip"
+      role="status"
+      aria-live="polite"
+      :style="{ left: `${objectTooltip.x}px`, top: `${objectTooltip.y}px` }"
+    >
+      <strong>{{ objectTooltip.name }}</strong>
+      <span v-for="line in objectTooltip.detailLines" :key="line">{{ line }}</span>
+    </div>
     <p :id="instructionsId" class="constellation-scene__sr-only">
-      Drag or swipe to look around the sky from Earth. Activate a star that belongs to a
-      constellation figure to open its three-dimensional slice; the highlighted star shows what a
-      click or tap will open. Full keyboard search of the constellations is available in the search
-      controls.
+      Drag or swipe to look around the sky from Earth. Click or tap a constellation region to open
+      its three-dimensional slice. Hover named stars and landmarks in a slice for their labels. Full
+      keyboard search of the constellations is available in the search controls.
     </p>
     <p v-if="webglFailed" class="constellation-scene__fallback" role="alert">
       This 3D star map needs WebGL, which is unavailable in this browser or has been disabled.
@@ -973,6 +1184,32 @@ onBeforeUnmount(() => {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.constellation-scene__tooltip {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  gap: 0.2rem;
+  max-width: min(16rem, calc(100% - 1.5rem));
+  padding: 0.55rem 0.7rem;
+  color: #fff4d6;
+  pointer-events: none;
+  background: color-mix(in srgb, #02040a 92%, transparent);
+  border: 1px solid color-mix(in srgb, #f5c542 55%, transparent);
+  border-radius: 0.35rem;
+  box-shadow: 0 0.55rem 1.4rem rgb(0 0 0 / 35%);
+  font-size: 0.82rem;
+  line-height: 1.35;
+
+  strong {
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+
+  span {
+    color: color-mix(in srgb, #fff4d6 68%, transparent);
+  }
 }
 
 .constellation-scene__sr-only {

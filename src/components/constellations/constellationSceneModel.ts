@@ -78,6 +78,10 @@ export type SelectedStarKind = 'figure' | 'context'
 export type SelectedStar = {
   readonly id: string
   readonly kind: SelectedStarKind
+  /** IAU proper name when present; null for catalog-only stars. */
+  readonly properName: string | null
+  readonly apparentMagnitude: number
+  readonly spectralType: string | null
   readonly color: RgbColor
   readonly size: number
   /** Unit direction on the celestial sphere (overview morph start). */
@@ -91,6 +95,7 @@ export type SelectedStar = {
   /** Stem from the display position down to the reference plane, or null. */
   readonly stem: StemSegment | null
   readonly distanceLy: number | null
+  readonly distanceErrorLy: number | null
 }
 
 export type SelectedLandmark = {
@@ -103,6 +108,7 @@ export type SelectedLandmark = {
   readonly displayLocal: Vec3
   readonly stem: StemSegment
   readonly distanceLy: number
+  readonly distanceErrorLy: number | null
 }
 
 export type ResolvedFigureEdge = {
@@ -421,6 +427,9 @@ export function buildSelectionModel(
       return {
         id: entry.star.id,
         kind: entry.kind,
+        properName: entry.star.properName,
+        apparentMagnitude: entry.star.apparentMagnitude,
+        spectralType: entry.star.spectralType,
         color,
         size,
         direction: entry.direction,
@@ -429,6 +438,7 @@ export function buildSelectionModel(
         displayLocal: null,
         stem: null,
         distanceLy: entry.star.distanceLy,
+        distanceErrorLy: entry.star.distanceErrorLy,
       }
     }
     const local = toLocalCoordinates(entry.physical, frame)
@@ -437,6 +447,9 @@ export function buildSelectionModel(
     return {
       id: entry.star.id,
       kind: entry.kind,
+      properName: entry.star.properName,
+      apparentMagnitude: entry.star.apparentMagnitude,
+      spectralType: entry.star.spectralType,
       color,
       size,
       direction: entry.direction,
@@ -445,6 +458,7 @@ export function buildSelectionModel(
       displayLocal,
       stem: projectStemToReferencePlane(displayLocal, slice.referencePlaneY),
       distanceLy: entry.star.distanceLy,
+      distanceErrorLy: entry.star.distanceErrorLy,
     }
   })
 
@@ -464,6 +478,7 @@ export function buildSelectionModel(
       displayLocal,
       stem: projectStemToReferencePlane(displayLocal, slice.referencePlaneY),
       distanceLy: landmark.distanceLy,
+      distanceErrorLy: landmark.distanceErrorLy,
     }
   })
 
@@ -515,4 +530,93 @@ export function collectStemFootSpots(model: ConstellationSelectionModel): StemFo
     spots.push({ sourceId: landmark.id, position: landmark.stem.foot })
   }
   return spots
+}
+
+export type OverviewFigureEdgeField = {
+  readonly constellationId: string
+  /** Unit-sphere endpoints, 6 floats per edge (from xyz, to xyz). */
+  readonly positions: Float32Array
+  readonly edgeCount: number
+}
+
+const STAR_BY_ID = new Map(CONSTELLATION_STARS.map((star) => [star.id, star]))
+
+/**
+ * Stick-figure edges for one constellation on the celestial sphere (overview preview).
+ * Endpoints are unit directions; the renderer scales them to the overview radius.
+ */
+export function buildOverviewFigureEdges(constellationId: string): OverviewFigureEdgeField | null {
+  const constellation = constellationById(constellationId)
+  if (!constellation || constellation.edges.length === 0) return null
+  const segments: number[] = []
+  for (const [fromId, toId] of constellation.edges) {
+    const from = STAR_BY_ID.get(fromId)
+    const to = STAR_BY_ID.get(toId)
+    if (!from || !to) continue
+    const a = equatorialToUnitDirection(from.raDeg, from.decDeg)
+    const b = equatorialToUnitDirection(to.raDeg, to.decDeg)
+    segments.push(a.x, a.y, a.z, b.x, b.y, b.z)
+  }
+  if (segments.length === 0) return null
+  return {
+    constellationId,
+    positions: new Float32Array(segments),
+    edgeCount: segments.length / 6,
+  }
+}
+
+export type NameWorthyPick = {
+  readonly id: string
+  readonly name: string
+  readonly kind: 'star' | 'landmark'
+  readonly position: Vec3
+  readonly detailLines: readonly string[]
+}
+
+/** Placed objects that carry a proper name (IAU star name or landmark title). */
+export function collectNameWorthyPicks(model: ConstellationSelectionModel): NameWorthyPick[] {
+  const picks: NameWorthyPick[] = []
+  for (const star of model.stars) {
+    if (!star.properName || !star.displayLocal) continue
+    const detailLines: string[] = []
+    if (Number.isFinite(star.apparentMagnitude)) {
+      detailLines.push(`Magnitude ${star.apparentMagnitude.toFixed(2)}`)
+    }
+    if (star.spectralType) detailLines.push(`Spectral type ${star.spectralType}`)
+    if (star.distanceLy !== null) {
+      const error = star.distanceErrorLy !== null ? ` ± ${formatLy(star.distanceErrorLy)}` : ''
+      detailLines.push(`Distance ${formatLy(star.distanceLy)}${error}`)
+    }
+    picks.push({
+      id: star.id,
+      name: star.properName,
+      kind: 'star',
+      position: star.displayLocal,
+      detailLines,
+    })
+  }
+  for (const landmark of model.landmarks) {
+    const detailLines = [capitalize(landmark.type)]
+    const error =
+      landmark.distanceErrorLy !== null ? ` ± ${formatLy(landmark.distanceErrorLy)}` : ''
+    detailLines.push(`Distance ${formatLy(landmark.distanceLy)}${error}`)
+    picks.push({
+      id: landmark.id,
+      name: landmark.name,
+      kind: 'landmark',
+      position: landmark.displayLocal,
+      detailLines,
+    })
+  }
+  return picks
+}
+
+function formatLy(value: number): string {
+  if (value >= 1000) return `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)} kly`
+  if (value >= 100) return `${Math.round(value)} ly`
+  return `${value.toFixed(1)} ly`
+}
+
+function capitalize(value: string): string {
+  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1)
 }

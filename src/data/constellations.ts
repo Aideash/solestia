@@ -7,6 +7,7 @@ import {
   type GeneratedLandmarkTuple,
   type GeneratedStarTuple,
 } from './generated/constellations.ts'
+import { IAU_STAR_PROPER_NAMES } from './generated/iauStarNames.ts'
 
 export type DistanceQuality = 'good' | 'uncertain' | 'poor' | 'unavailable'
 
@@ -16,6 +17,8 @@ export type ConstellationStar = {
   readonly id: string
   readonly hip: number
   readonly gaiaSourceId: string | null
+  /** IAU WGSN proper name when one exists; null for catalog-only designations. */
+  readonly properName: string | null
   readonly raDeg: number
   readonly decDeg: number
   readonly positionEpochJulianYear: number
@@ -122,6 +125,7 @@ export const CONSTELLATION_STARS: readonly ConstellationStar[] = (
     id,
     hip,
     gaiaSourceId,
+    properName: IAU_STAR_PROPER_NAMES.get(hip) ?? null,
     raDeg,
     decDeg,
     positionEpochJulianYear,
@@ -183,6 +187,19 @@ export const CONSTELLATION_ATTRIBUTIONS: readonly CatalogAttribution[] = [
     sourcePageUrl: GENERATED_CONSTELLATION_META.lineSourcePage,
     revision: GENERATED_CONSTELLATION_META.lineSourceRevision,
     license: 'CC BY 4.0',
+  },
+  {
+    label: 'Constellation boundaries',
+    attribution: 'Nancy G. Roman (1987), based on Delporte (1930)',
+    sourceUrl: 'https://cdsarc.cds.unistra.fr/viz-bin/cat/VI/42',
+    license: 'VizieR data-use policy',
+  },
+  {
+    label: 'IAU star names',
+    attribution: 'IAU Working Group on Star Names (WGSN), Catalog of Star Names',
+    sourceUrl: 'https://www.iau.org/public/themes/naming_stars/',
+    sourcePageUrl: 'https://www.pas.rochester.edu/~emamajek/WGSN/IAU-CSN.txt',
+    license: 'CC BY',
   },
   {
     label: 'Gaia stellar astrometry',
