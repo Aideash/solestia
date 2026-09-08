@@ -4,6 +4,7 @@ import {
   deselectMorphAmount,
   deselectOpacityAmount,
   deselectPhaseWeights,
+  earthPovCameraOffset,
   easeInOutCubic,
   frontFacingCameraOffset,
   yawPitchFromDirection,
@@ -48,6 +49,48 @@ describe('frontFacingCameraOffset', () => {
     expect(offset.x).toBeCloseTo(-50, 6)
     expect(offset.y).toBeCloseTo(0, 6)
     expect(offset.z).toBeCloseTo(0, 6)
+  })
+})
+
+describe('earthPovCameraOffset', () => {
+  const depth = { x: 0, y: 0, z: 1 }
+  const earthWorld = { x: 10, y: -4, z: -80 }
+
+  it('uses the geometric Earth offset in true scale', () => {
+    const offset = earthPovCameraOffset({
+      depthMode: 'true',
+      earthWorld,
+      depth,
+      currentDistance: 144,
+      fallbackDistance: 144,
+    })
+    expect(offset.x).toBeCloseTo(10, 6)
+    expect(offset.y).toBeCloseTo(-4, 6)
+    expect(offset.z).toBeCloseTo(-80, 6)
+  })
+
+  it('keeps the current orbit distance in compressed depth instead of chasing Earth', () => {
+    const offset = earthPovCameraOffset({
+      depthMode: 'compressed',
+      earthWorld,
+      depth,
+      currentDistance: 120,
+      fallbackDistance: 144,
+    })
+    expect(offset.x).toBeCloseTo(0, 6)
+    expect(offset.y).toBeCloseTo(0, 6)
+    expect(offset.z).toBeCloseTo(-120, 6)
+  })
+
+  it('falls back to a front-facing pose when true-scale Earth coincides with the origin', () => {
+    const offset = earthPovCameraOffset({
+      depthMode: 'true',
+      earthWorld: { x: 0, y: 0, z: 0 },
+      depth,
+      currentDistance: 90,
+      fallbackDistance: 144,
+    })
+    expect(offset.z).toBeCloseTo(-90, 6)
   })
 })
 

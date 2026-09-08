@@ -12,6 +12,7 @@ import type { ConstellationDepthMode } from '../lib/constellationGeometry.ts'
 
 const route = useRoute()
 const router = useRouter()
+const sceneRef = ref<{ goToEarthPov: () => void } | null>(null)
 const showStems = ref(false)
 const previewFigureLines = ref(true)
 const listPreviewId = ref<string | null>(null)
@@ -52,6 +53,10 @@ function returnToSky(): void {
   void router.push({ name: 'constellations' })
 }
 
+function goToEarthPov(): void {
+  sceneRef.value?.goToEarthPov()
+}
+
 function dismissInvalidMessage(): void {
   invalidMessage.value = null
 }
@@ -87,6 +92,7 @@ function dismissInvalidMessage(): void {
 
       <section class="constellations-page__stage" aria-label="Constellation explorer">
         <ConstellationScene
+          ref="sceneRef"
           :selected-id="selectedId"
           :show-stems="showStems"
           :depth-mode="depthMode"
@@ -102,7 +108,10 @@ function dismissInvalidMessage(): void {
             <p class="constellations-page__eyebrow">Constellation slice</p>
             <h2>{{ selectedConstellation.name }}</h2>
             <p>Drag to orbit around the slice and reveal its stellar depth.</p>
-            <button type="button" data-return-to-sky @click="returnToSky">Return to sky</button>
+            <div class="constellations-page__actions">
+              <button type="button" data-return-to-sky @click="returnToSky">Return to sky</button>
+              <button type="button" data-earth-pov @click="goToEarthPov">Earth POV</button>
+            </div>
           </div>
           <div v-else>
             <h2>Explore the celestial sphere</h2>
@@ -251,7 +260,7 @@ $header-reserve-compact: 4rem;
   }
 
   button {
-    margin-top: $spacing-sm;
+    margin-top: 0;
     padding: $spacing-xs $spacing-sm;
     color: #73d5e8;
     pointer-events: auto;
@@ -266,6 +275,13 @@ $header-reserve-compact: 4rem;
       outline-offset: 2px;
     }
   }
+}
+
+.constellations-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $spacing-sm;
+  margin-top: $spacing-sm;
 }
 
 .constellations-page__settings {

@@ -1,9 +1,13 @@
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ConstellationScene from '../components/constellations/ConstellationScene.vue'
 import ConstellationsPage from './ConstellationsPage.vue'
+
+const sceneApi = vi.hoisted(() => ({
+  goToEarthPov: vi.fn(),
+}))
 
 vi.mock('../components/constellations/ConstellationScene.vue', () => ({
   default: defineComponent({
@@ -17,11 +21,17 @@ vi.mock('../components/constellations/ConstellationScene.vue', () => ({
       dragMode: { type: String, default: 'normal' },
     },
     emits: ['select', 'scale-change'],
+    methods: {
+      goToEarthPov() {
+        sceneApi.goToEarthPov()
+      },
+    },
     template: '<div class="scene-contract" />',
   }),
 }))
 
 const mountedWrappers: VueWrapper[] = []
+const mountHosts: HTMLElement[] = []
 
 async function mountPage(
   path = '/constellations',
@@ -35,8 +45,14 @@ async function mountPage(
   })
   await router.push(path)
   await router.isReady()
+
+  const app = document.createElement('div')
+  app.className = 'app'
+  document.body.appendChild(app)
+  mountHosts.push(app)
+
   const wrapper = mount(ConstellationsPage, {
-    attachTo: document.body,
+    attachTo: app,
     global: { plugins: [router] },
   })
   mountedWrappers.push(wrapper)
@@ -45,7 +61,9 @@ async function mountPage(
 }
 
 afterEach(() => {
+  sceneApi.goToEarthPov.mockClear()
   for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
+  for (const host of mountHosts.splice(0)) host.remove()
 })
 
 describe('ConstellationsPage', () => {
@@ -77,6 +95,17 @@ describe('ConstellationsPage', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/constellations')
     expect(wrapper.text()).toContain('selecting or searching opens a constellation')
+  })
+
+  it('offers Earth POV beside return-to-sky and asks the scene to go there', async () => {
+    const { wrapper, router } = await mountPage('/constellation/orion')
+
+    const earthPov = wrapper.get('button[data-earth-pov]')
+    expect(earthPov.text()).toBe('Earth POV')
+    await earthPov.trigger('click')
+
+    expect(sceneApi.goToEarthPov).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/constellation/orion')
   })
 
   it('replaces invalid IDs with overview and announces the invalid value', async () => {
@@ -124,10 +153,15 @@ describe('ConstellationsPage', () => {
       unavailableCount: 2,
     })
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
-    await wrapper.get('input[data-settings-preview-lines]').setValue(false)
-    await wrapper.get('input[data-settings-stems]').setValue(true)
-    await wrapper.get('input[type="radio"][value="true"]').setValue()
-    await wrapper.get('input[data-settings-drag-mode][value="inverted"]').setValue()
+
+    // Settings teleport into `.app`, outside the page component root.
+    const dialogEl = document.querySelector('.app > [role="dialog"]')
+    expect(dialogEl).toBeInstanceOf(HTMLElement)
+    const dialog = new DOMWrapper(dialogEl as HTMLElement)
+    await dialog.get('input[data-settings-preview-lines]').setValue(false)
+    await dialog.get('input[data-settings-stems]').setValue(true)
+    await dialog.get('input[type="radio"][value="true"]').setValue()
+    await dialog.get('input[data-settings-drag-mode][value="inverted"]').setValue()
 
     expect(scene.props()).toMatchObject({
       showStems: true,
@@ -162,8 +196,13 @@ describe('ConstellationsPage', () => {
     await router.push('/constellations')
     await router.isReady()
 
+    const app = document.createElement('div')
+    app.className = 'app'
+    document.body.appendChild(app)
+    mountHosts.push(app)
+
     const Harness = { components: { RouterView }, template: '<RouterView />' }
-    const wrapper = mount(Harness, { attachTo: document.body, global: { plugins: [router] } })
+    const wrapper = mount(Harness, { attachTo: app, global: { plugins: [router] } })
     mountedWrappers.push(wrapper)
     await flushPromises()
 

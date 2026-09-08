@@ -48,6 +48,7 @@ import {
   deselectMorphAmount,
   deselectOpacityAmount,
   deselectPhaseWeights,
+  earthPovCameraOffset,
   easeInOutCubic,
   frontFacingCameraOffset,
   yawPitchFromDirection,
@@ -130,6 +131,8 @@ let regionPreviewId: string | null = null
 let selectionGroup: Group | null = null
 /** Unit depth of the active selection; drives the Earth-view exit aim. */
 let activeSelectionDepth: Vec3 | null = null
+/** Slice-space Earth position relative to the orbit target (centroid). */
+let activeEarthWorldOffset: Vec3 | null = null
 type Morphable = { attribute: Float32BufferAttribute; start: Float32Array; end: Float32Array }
 let morphables: Morphable[] = []
 let nameWorthyPicks: { pick: NameWorthyPick; world: Vector3 }[] = []
@@ -166,6 +169,13 @@ let lookEnd = new Vector3()
 let overviewOpacityStart = 1
 let overviewOpacityEnd = 1
 let transitionStartTime = 0
+
+// Settled-slice Earth POV tween: stays in `slice` mode, keeps OrbitControls free,
+// and yields immediately if the user starts dragging mid-flight.
+let earthPovAnimating = false
+let earthPovStartTime = 0
+const earthPovCamStart = new Vector3()
+const earthPovCamEnd = new Vector3()
 
 const VERTEX_SHADER = `
 attribute float aSize;
@@ -437,6 +447,9 @@ function buildSelection(model: ConstellationSelectionModel): void {
   }
   const fitScale = maxReach > 1e-6 ? SLICE_TARGET_RADIUS / maxReach : 1
   const slicePoint = (local: Vec3): Vector3 => localToWorld(local).multiplyScalar(fitScale)
+  // Earth is the local-frame origin; in true scale this is the correct POV stand.
+  const earthWorld = slicePoint({ x: 0, y: 0, z: 0 })
+  activeEarthWorldOffset = { x: earthWorld.x, y: earthWorld.y, z: earthWorld.z }
 
   const starColor = SLICE_GEOMETRY_COLOR
   const referenceColor = new Color(SLICE_GEOMETRY_COLOR)
@@ -643,6 +656,7 @@ function buildReferencePlaneOutline(
 
 function startSelectionTransition(model: ConstellationSelectionModel): void {
   if (!camera) return
+  cancelEarthPovAnimation()
   hideHover()
   regionPreviewId = null
   disposePreviewLines()
@@ -672,8 +686,62 @@ function startSelectionTransition(model: ConstellationSelectionModel): void {
   }
 }
 
+function cancelEarthPovAnimation(): void {
+  if (!earthPovAnimating) return
+  earthPovAnimating = false
+  if (camera) {
+    camera.lookAt(0, 0, 0)
+    controls?.update()
+  }
+  requestRender()
+}
+
+function applyEarthPovProgress(t: number): void {
+  if (!camera) return
+  const eased = easeInOutCubic(t)
+  camera.position.lerpVectors(earthPovCamStart, earthPovCamEnd, eased)
+  camera.lookAt(0, 0, 0)
+}
+
+function finishEarthPovAnimation(): void {
+  earthPovAnimating = false
+  applyEarthPovProgress(1)
+  controls?.update()
+  requestRender()
+}
+
+function goToEarthPov(): void {
+  if (!camera || sceneMode !== 'slice' || !activeSelectionDepth) return
+  cancelEarthPovAnimation()
+
+  const facing = earthPovCameraOffset({
+    depthMode: props.depthMode,
+    earthWorld: activeEarthWorldOffset ?? { x: 0, y: 0, z: 0 },
+    depth: activeSelectionDepth,
+    currentDistance: camera.position.length(),
+    fallbackDistance: SLICE_CAMERA_DISTANCE,
+  })
+  earthPovCamStart.copy(camera.position)
+  earthPovCamEnd.set(facing.x, facing.y, facing.z)
+
+  if (prefersReducedMotion()) {
+    camera.position.copy(earthPovCamEnd)
+    camera.lookAt(0, 0, 0)
+    controls?.update()
+    requestRender()
+    return
+  }
+
+  earthPovAnimating = true
+  earthPovStartTime = performance.now()
+  requestRender()
+}
+
+defineExpose({ goToEarthPov })
+
 function startDeselectTransition(): void {
   if (!camera) return
+  cancelEarthPovAnimation()
   sceneMode = 'toOverview'
   disableControls()
 
@@ -788,6 +856,7 @@ function enableControls(): void {
     controls.enableDamping = false
     controls.enablePan = false
     controls.addEventListener('change', requestRender)
+    controls.addEventListener('start', cancelEarthPovAnimation)
   }
   controls.rotateSpeed = orbitRotateSpeed(props.dragMode)
   controls.minDistance = sliceOrbitMinDistance(camera.near, SLICE_TARGET_RADIUS)
@@ -912,6 +981,15 @@ function updateObjectTooltip(event: PointerEvent): void {
 }
 
 function onPointerDown(event: PointerEvent): void {
+  if (sceneMode === 'slice') {
+    // Track the gesture so a mid-Earth-POV drag can cancel the tween; OrbitControls
+    // still owns the orbit itself.
+    activePointerId = event.pointerId
+    pointerDownX = event.clientX
+    pointerDownY = event.clientY
+    pointerMoved = false
+    return
+  }
   if (sceneMode !== 'overview') return
   hideHover()
   activePointerId = event.pointerId
@@ -925,6 +1003,14 @@ function onPointerDown(event: PointerEvent): void {
 
 function onPointerMove(event: PointerEvent): void {
   if (sceneMode === 'slice') {
+    if (earthPovAnimating && event.pointerId === activePointerId) {
+      const dx = event.clientX - pointerDownX
+      const dy = event.clientY - pointerDownY
+      if (!pointerMoved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+        pointerMoved = true
+        cancelEarthPovAnimation()
+      }
+    }
     updateObjectTooltip(event)
     return
   }
@@ -1000,12 +1086,19 @@ function animate(): void {
     applyTransitionProgress(t)
     needsRender = true
     if (t >= 1) finishTransition()
+  } else if (earthPovAnimating) {
+    const t = Math.min(1, (performance.now() - earthPovStartTime) / TRANSITION_MS)
+    applyEarthPovProgress(t)
+    needsRender = true
+    if (t >= 1) finishEarthPovAnimation()
   }
   if (needsRender && renderer && scene && camera) {
     needsRender = false
     renderer.render(scene, camera)
   }
-  if (sceneMode === 'toSlice' || sceneMode === 'toOverview' || needsRender) scheduleFrame()
+  if (sceneMode === 'toSlice' || sceneMode === 'toOverview' || earthPovAnimating || needsRender) {
+    scheduleFrame()
+  }
 }
 
 // --- Selection orchestration -----------------------------------------------
@@ -1145,6 +1238,7 @@ function disposeSelection(): void {
   morphables = []
   nameWorthyPicks = []
   activeSelectionDepth = null
+  activeEarthWorldOffset = null
 }
 
 watch(
@@ -1180,6 +1274,7 @@ onBeforeUnmount(() => {
 
   if (controls) {
     controls.removeEventListener('change', requestRender)
+    controls.removeEventListener('start', cancelEarthPovAnimation)
     controls.dispose()
     controls = null
   }

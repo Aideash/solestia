@@ -73,6 +73,35 @@ export function frontFacingCameraOffset(
   return { x: depth.x * scale, y: depth.y * scale, z: depth.z * scale }
 }
 
+export type EarthPovCameraOffsetInput = {
+  readonly depthMode: 'true' | 'compressed'
+  /** Slice-space position of Earth relative to the orbit target (centroid). */
+  readonly earthWorld: Vec3
+  /** Unit sky direction; used when Earth is unavailable or depth is compressed. */
+  readonly depth: Vec3
+  readonly currentDistance: number
+  readonly fallbackDistance?: number
+}
+
+/**
+ * Camera pose for the Earth POV control.
+ *
+ * True scale places the camera at the geometric Earth offset so the constellation
+ * matches the sky view. Compressed depth remaps stellar z while leaving Earth at
+ * local z = 0, so that offset is not a meaningful viewing distance — reorient on
+ * `-depth` at the current orbit radius instead of chasing it.
+ */
+export function earthPovCameraOffset(input: EarthPovCameraOffsetInput): Vec3 {
+  const fallback = input.fallbackDistance ?? 144
+  if (input.depthMode === 'true') {
+    const length = Math.hypot(input.earthWorld.x, input.earthWorld.y, input.earthWorld.z)
+    if (length > 1e-6) {
+      return { x: input.earthWorld.x, y: input.earthWorld.y, z: input.earthWorld.z }
+    }
+  }
+  return frontFacingCameraOffset(input.depth, input.currentDistance, fallback)
+}
+
 /** Split a 0→1 deselect timeline into reorient then zoom/morph weights. */
 export function deselectPhaseWeights(
   t: number,

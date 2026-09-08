@@ -199,4 +199,65 @@ describe('ConstellationScene motion and rebuild timing', () => {
     flushFrames(0)
     expect(frames.length).toBe(0)
   })
+
+  it('animates Earth POV across the transition when motion is allowed', async () => {
+    reducedMotion = false
+    const wrapper = await mountScene({ selectedId: 'orion' })
+    flushFrames(1200)
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+
+    wrapper.vm.goToEarthPov()
+    flushFrames(0)
+    expect(frames.length).toBeGreaterThan(0)
+
+    flushFrames(1200)
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+  })
+
+  it('settles Earth POV within a single frame when reduced motion is preferred', async () => {
+    reducedMotion = true
+    const wrapper = await mountScene({ selectedId: 'orion' })
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+
+    wrapper.vm.goToEarthPov()
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+  })
+
+  it('stops Earth POV animation when the user drags mid-transition', async () => {
+    reducedMotion = false
+    const wrapper = await mountScene({ selectedId: 'orion' })
+    flushFrames(1200)
+    flushFrames(0)
+
+    wrapper.vm.goToEarthPov()
+    flushFrames(0)
+    expect(frames.length).toBeGreaterThan(0)
+
+    flushFrames(200)
+    const canvas = wrapper.element.querySelector('canvas')
+    expect(canvas).not.toBeNull()
+    // jsdom lacks pointer capture; OrbitControls also hears these events.
+    canvas!.setPointerCapture = () => {}
+    canvas!.releasePointerCapture = () => {}
+    canvas!.dispatchEvent(
+      new PointerEvent('pointerdown', { pointerId: 1, clientX: 40, clientY: 40, bubbles: true }),
+    )
+    canvas!.dispatchEvent(
+      new PointerEvent('pointermove', {
+        pointerId: 1,
+        clientX: 80,
+        clientY: 40,
+        bubbles: true,
+        movementX: 40,
+        movementY: 0,
+      }),
+    )
+
+    flushFrames(0)
+    expect(frames.length).toBe(0)
+  })
 })
