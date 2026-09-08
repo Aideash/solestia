@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import PlanetSystemPage from './views/PlanetSystemPage.vue'
 import SolarSystemPage from './views/SolarSystemPage.vue'
 
+const ConstellationsPage = () => import('./views/ConstellationsPage.vue')
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -82,6 +84,18 @@ export const router = createRouter({
       component: PlanetSystemPage,
       props: { systemId: 'neptune' },
       meta: { subtitle: 'Neptune' },
+    },
+    {
+      path: '/constellations',
+      name: 'constellations',
+      component: ConstellationsPage,
+      meta: { subtitle: 'Constellations', timeless: true, immersive: true },
+    },
+    {
+      path: '/constellation/:id',
+      name: 'constellation',
+      component: ConstellationsPage,
+      meta: { subtitle: 'Constellations', timeless: true, immersive: true },
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

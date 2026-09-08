@@ -1,0 +1,184 @@
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import ConstellationScene from '../components/constellations/ConstellationScene.vue'
+import ConstellationsPage from './ConstellationsPage.vue'
+
+vi.mock('../components/constellations/ConstellationScene.vue', () => ({
+  default: defineComponent({
+    name: 'ConstellationScene',
+    props: {
+      selectedId: { type: String, default: null },
+      showStems: { type: Boolean, default: false },
+      depthMode: { type: String, default: 'compressed' },
+    },
+    emits: ['select', 'scale-change'],
+    template: '<div class="scene-contract" />',
+  }),
+}))
+
+const mountedWrappers: VueWrapper[] = []
+
+async function mountPage(
+  path = '/constellations',
+): Promise<{ wrapper: VueWrapper; router: Router }> {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/constellations', name: 'constellations', component: ConstellationsPage },
+      { path: '/constellation/:id', name: 'constellation', component: ConstellationsPage },
+    ],
+  })
+  await router.push(path)
+  await router.isReady()
+  const wrapper = mount(ConstellationsPage, {
+    attachTo: document.body,
+    global: { plugins: [router] },
+  })
+  mountedWrappers.push(wrapper)
+  await flushPromises()
+  return { wrapper, router }
+}
+
+afterEach(() => {
+  for (const wrapper of mountedWrappers.splice(0)) wrapper.unmount()
+})
+
+describe('ConstellationsPage', () => {
+  it('uses the URL parameter as the active constellation and identifies its detail', async () => {
+    const { wrapper } = await mountPage('/constellation/orion')
+
+    expect(wrapper.getComponent(ConstellationScene).props('selectedId')).toBe('orion')
+    expect(wrapper.get('[data-constellation-detail]').text()).toContain('Orion')
+    expect(wrapper.text()).toContain('Drag to orbit around the slice')
+  })
+
+  it('pushes detail routes from search and scene selections', async () => {
+    const { wrapper, router } = await mountPage()
+
+    await wrapper.get('[data-constellation-id="orion"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/constellation/orion')
+
+    wrapper.getComponent(ConstellationScene).vm.$emit('select', 'ursa-major')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/constellation/ursa-major')
+  })
+
+  it('returns to the sky overview from the detail action', async () => {
+    const { wrapper, router } = await mountPage('/constellation/orion')
+
+    await wrapper.get('button[data-return-to-sky]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/constellations')
+    expect(wrapper.text()).toContain('selecting or searching opens a constellation')
+  })
+
+  it('replaces invalid IDs with overview and announces the invalid value', async () => {
+    const { wrapper, router } = await mountPage('/constellation/not-a-real-constellation')
+
+    expect(router.currentRoute.value.fullPath).toBe('/constellations')
+    const notice = wrapper.get('[role="alert"]')
+    expect(notice.attributes('aria-live')).toBe('assertive')
+    expect(notice.text()).toContain('not-a-real-constellation')
+  })
+
+  it('dismisses the invalid-ID notice with its dismiss control', async () => {
+    const { wrapper, router } = await mountPage('/constellation/not-a-real-constellation')
+
+    expect(router.currentRoute.value.fullPath).toBe('/constellations')
+    const notice = wrapper.get('[role="alert"]')
+    expect(notice.text()).toContain('not-a-real-constellation')
+
+    // The notice persists (no timer) until the native dismiss control clears it,
+    // freeing the search input it overlaps on narrow layouts.
+    const dismiss = wrapper.get('[data-notice-dismiss]')
+    expect(dismiss.attributes('type')).toBe('button')
+    await dismiss.trigger('click')
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
+  it('starts compressed without stems and flows settings changes into the scene and legend', async () => {
+    const { wrapper } = await mountPage('/constellation/orion')
+    const scene = wrapper.getComponent(ConstellationScene)
+
+    expect(scene.props()).toMatchObject({
+      selectedId: 'orion',
+      showStems: false,
+      depthMode: 'compressed',
+    })
+
+    scene.vm.$emit('scale-change', {
+      mode: 'compressed',
+      maxLightYears: 2_500,
+      depthLimitLy: 1_000,
+      measuredCount: 6,
+      unavailableCount: 2,
+    })
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('input[type="radio"][value="true"]').setValue()
+
+    expect(scene.props()).toMatchObject({ showStems: true, depthMode: 'true' })
+    expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
+      'True scale',
+    )
+    expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
+      '2 stars omitted',
+    )
+  })
+
+  it('keeps one mounted page and scene instance across overview → detail → overview', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/constellations', name: 'constellations', component: ConstellationsPage },
+        { path: '/constellation/:id', name: 'constellation', component: ConstellationsPage },
+      ],
+    })
+    await router.push('/constellations')
+    await router.isReady()
+
+    const Harness = { components: { RouterView }, template: '<RouterView />' }
+    const wrapper = mount(Harness, { attachTo: document.body, global: { plugins: [router] } })
+    mountedWrappers.push(wrapper)
+    await flushPromises()
+
+    // A reused instance keeps its uid and its mounted DOM node; a remount would
+    // increment the uid and swap in fresh elements.
+    const pageUid = wrapper.findComponent(ConstellationsPage).vm.$.uid
+    const sceneNode = wrapper.findComponent(ConstellationScene).element
+
+    await router.push('/constellation/orion')
+    await flushPromises()
+    // A shared route component must be reused, not remounted, so the live scene
+    // survives selection rather than tearing down and rebuilding its GPU state.
+    expect(wrapper.findComponent(ConstellationsPage).vm.$.uid).toBe(pageUid)
+    expect(wrapper.findComponent(ConstellationScene).element).toBe(sceneNode)
+
+    await router.push('/constellations')
+    await flushPromises()
+    expect(wrapper.findComponent(ConstellationsPage).vm.$.uid).toBe(pageUid)
+    expect(wrapper.findComponent(ConstellationScene).element).toBe(sceneNode)
+  })
+
+  it('updates the distance legend from scene scale changes', async () => {
+    const { wrapper } = await mountPage('/constellation/orion')
+
+    wrapper.getComponent(ConstellationScene).vm.$emit('scale-change', {
+      mode: 'compressed',
+      maxLightYears: 812,
+      depthLimitLy: 812,
+      measuredCount: 5,
+      unavailableCount: 1,
+    })
+    await wrapper.vm.$nextTick()
+
+    const legend = wrapper.get('[aria-label="Constellation distance scale"]')
+    expect(legend.text()).toContain('Physical maximum 812 ly')
+    expect(legend.text()).toContain('1 star omitted')
+  })
+})
