@@ -4,8 +4,9 @@ import { dirname, resolve } from 'node:path'
 const LINE_SOURCE_REVISION = '75d29c207bbd752023c447ddd1f9f4ff0eb47538'
 const LINE_SOURCE_URL = `https://raw.githubusercontent.com/dcf21/constellation-stick-figures/${LINE_SOURCE_REVISION}/constellation_lines_iau.dat`
 const LINE_SOURCE_PAGE = 'https://github.com/dcf21/constellation-stick-figures'
+// RAhms/DEdms are required: some multiples (e.g. HIP 55203) lack RAICRS/DEICRS.
 const HIPPARCOS_URL =
-  'https://vizier.cds.unistra.fr/viz-bin/asu-tsv?-source=I%2F239%2Fhip_main&-out=HIP%2CRAICRS%2CDEICRS%2CVmag%2CPlx%2Ce_Plx%2CpmRA%2CpmDE%2CSpType&Vmag=%3C6.5&-out.max=10000'
+  'https://vizier.cds.unistra.fr/viz-bin/asu-tsv?-source=I%2F239%2Fhip_main&-out=HIP%2CRAhms%2CDEdms%2CRAICRS%2CDEICRS%2CVmag%2CPlx%2Ce_Plx%2CpmRA%2CpmDE%2CSpType&Vmag=%3C6.5&-out.max=10000'
 const HIPPARCOS_PAGE = 'https://cdsarc.cds.unistra.fr/viz-bin/cat/I/239'
 const GAIA_TAP_URL = 'https://gea.esac.esa.int/tap-server/tap/sync'
 const GAIA_PAGE = 'https://gea.esac.esa.int/archive/'
@@ -192,6 +193,45 @@ function finiteOrNull(value: string | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/** Hipparcos RAhms (`HH MM SS.sss`) → degrees. */
+function parseRaHms(value: string | undefined): number | null {
+  const parts = value?.trim().split(/\s+/)
+  if (!parts || parts.length !== 3) return null
+  const hours = Number(parts[0])
+  const minutes = Number(parts[1])
+  const seconds = Number(parts[2])
+  if (![hours, minutes, seconds].every(Number.isFinite)) return null
+  return (hours + minutes / 60 + seconds / 3600) * 15
+}
+
+/** Hipparcos DEdms (`±DD MM SS.sss`) → degrees. Sign attaches to the degree field. */
+function parseDecDms(value: string | undefined): number | null {
+  const parts = value?.trim().split(/\s+/)
+  if (!parts || parts.length !== 3) return null
+  const degrees = Number(parts[0])
+  const minutes = Number(parts[1])
+  const seconds = Number(parts[2])
+  if (![degrees, minutes, seconds].every(Number.isFinite)) return null
+  const sign = degrees < 0 || parts[0]!.startsWith('-') ? -1 : 1
+  return sign * (Math.abs(degrees) + minutes / 60 + seconds / 3600)
+}
+
+/**
+ * Prefer RAICRS/DEICRS degrees. When those are blank (no 5-parameter solution),
+ * convert RAhms/DEdms so the star still places on the sky — never treat blank as 0°.
+ */
+function resolveHipparcosEquatorial(
+  raIcrsRaw: string | undefined,
+  deIcrsRaw: string | undefined,
+  raHmsRaw: string | undefined,
+  deDmsRaw: string | undefined,
+): { raDeg: number; decDeg: number } | null {
+  const raDeg = finiteOrNull(raIcrsRaw) ?? parseRaHms(raHmsRaw)
+  const decDeg = finiteOrNull(deIcrsRaw) ?? parseDecDms(deDmsRaw)
+  if (raDeg === null || decDeg === null) return null
+  return { raDeg, decDeg }
+}
+
 function parseLineFigures(text: string): Map<string, number[][]> {
   const figures = new Map<string, number[][]>()
   let current: string | null = null
@@ -215,24 +255,29 @@ function parseHipparcos(text: string): Map<number, HipparcosRow> {
   const rows = new Map<number, HipparcosRow>()
   for (const line of text.split(/\r?\n/)) {
     if (!/^\s*\d+\t/.test(line)) continue
-    const [hipRaw, raRaw, decRaw, magnitudeRaw, parallaxRaw, errorRaw, pmRaRaw, pmDecRaw, typeRaw] =
-      line.split('\t')
+    const [
+      hipRaw,
+      raHmsRaw,
+      deDmsRaw,
+      raRaw,
+      decRaw,
+      magnitudeRaw,
+      parallaxRaw,
+      errorRaw,
+      pmRaRaw,
+      pmDecRaw,
+      typeRaw,
+    ] = line.split('\t')
     const hip = Number(hipRaw)
-    const raDeg = Number(raRaw)
-    const decDeg = Number(decRaw)
+    const equatorial = resolveHipparcosEquatorial(raRaw, decRaw, raHmsRaw, deDmsRaw)
     const magnitude = Number(magnitudeRaw)
-    if (
-      !Number.isInteger(hip) ||
-      !Number.isFinite(raDeg) ||
-      !Number.isFinite(decDeg) ||
-      !Number.isFinite(magnitude)
-    ) {
+    if (!Number.isInteger(hip) || !equatorial || !Number.isFinite(magnitude)) {
       continue
     }
     rows.set(hip, {
       hip,
-      raDeg,
-      decDeg,
+      raDeg: equatorial.raDeg,
+      decDeg: equatorial.decDeg,
       magnitude,
       parallaxMas: finiteOrNull(parallaxRaw),
       parallaxErrorMas: finiteOrNull(errorRaw),
@@ -365,6 +410,61 @@ function distanceFromParallax(parallaxMas: number | null, errorMas: number | nul
   }
 }
 
+type ParallaxCarrier = {
+  parallaxMas: number | null
+  parallaxErrorMas: number | null
+  pmRaMasYr: number | null
+  pmDecMasYr: number | null
+}
+
+/**
+ * Prefer Gaia distance when its parallax is usable. Bright stars often have a
+ * Gaia source id but a null/invalid parallax (saturation); fall back to
+ * Hipparcos parallax and proper motion so figure stars still place in the slice.
+ */
+function resolveDistanceAndMotion(
+  gaia: ParallaxCarrier | undefined,
+  hipparcos: ParallaxCarrier | undefined,
+): {
+  distance: Distance
+  distanceSource: 'Gaia DR3 parallax' | 'Hipparcos parallax' | null
+  parallaxMas: number | null
+  pmRaMasYr: number | null
+  pmDecMasYr: number | null
+} {
+  if (gaia) {
+    const gaiaDistance = distanceFromParallax(gaia.parallaxMas, gaia.parallaxErrorMas)
+    if (gaiaDistance.distanceLy !== null) {
+      return {
+        distance: gaiaDistance,
+        distanceSource: 'Gaia DR3 parallax',
+        parallaxMas: gaia.parallaxMas,
+        pmRaMasYr: gaia.pmRaMasYr,
+        pmDecMasYr: gaia.pmDecMasYr,
+      }
+    }
+  }
+  if (hipparcos) {
+    const hipDistance = distanceFromParallax(hipparcos.parallaxMas, hipparcos.parallaxErrorMas)
+    if (hipDistance.distanceLy !== null) {
+      return {
+        distance: hipDistance,
+        distanceSource: 'Hipparcos parallax',
+        parallaxMas: hipparcos.parallaxMas,
+        pmRaMasYr: hipparcos.pmRaMasYr,
+        pmDecMasYr: hipparcos.pmDecMasYr,
+      }
+    }
+  }
+  return {
+    distance: { distanceLy: null, errorLy: null, quality: 'unavailable' },
+    distanceSource: null,
+    parallaxMas: null,
+    pmRaMasYr: gaia?.pmRaMasYr ?? hipparcos?.pmRaMasYr ?? null,
+    pmDecMasYr: gaia?.pmDecMasYr ?? hipparcos?.pmDecMasYr ?? null,
+  }
+}
+
 function velocityFromMeasurements(
   raDeg: number,
   decDeg: number,
@@ -465,14 +565,11 @@ const stars: GeneratedStar[] = [...selectedHips]
     const hipparcosRow = hipparcos.get(hip)
     const gaiaRow = gaia.get(hip)
     if (!hipparcosRow && !gaiaRow) throw new Error(`Missing selected star HIP ${hip}`)
+    // Position/photometry prefer Gaia; distance falls back to Hipparcos when
+    // Gaia has a source but no usable parallax (common for bright figure stars).
     const astrometry = gaiaRow ?? hipparcosRow!
-    const distance = distanceFromParallax(astrometry.parallaxMas, astrometry.parallaxErrorMas)
-    const distanceSource =
-      distance.distanceLy === null
-        ? null
-        : gaiaRow
-          ? ('Gaia DR3 parallax' as const)
-          : ('Hipparcos parallax' as const)
+    const { distance, distanceSource, parallaxMas, pmRaMasYr, pmDecMasYr } =
+      resolveDistanceAndMotion(gaiaRow, hipparcosRow)
     const constellationIds = [...constellationHips]
       .filter(([, hips]) => hips.has(hip))
       .map(([id]) => id)
@@ -493,17 +590,17 @@ const stars: GeneratedStar[] = [...selectedHips]
       distance.errorLy,
       distance.quality,
       distanceSource,
-      astrometry.pmRaMasYr === null ? null : round(astrometry.pmRaMasYr, 6),
-      astrometry.pmDecMasYr === null ? null : round(astrometry.pmDecMasYr, 6),
+      pmRaMasYr === null ? null : round(pmRaMasYr, 6),
+      pmDecMasYr === null ? null : round(pmDecMasYr, 6),
       gaiaRow?.radialVelocityKmS === null || gaiaRow?.radialVelocityKmS === undefined
         ? null
         : round(gaiaRow.radialVelocityKmS, 6),
       velocityFromMeasurements(
         astrometry.raDeg,
         astrometry.decDeg,
-        astrometry.parallaxMas,
-        astrometry.pmRaMasYr,
-        astrometry.pmDecMasYr,
+        parallaxMas,
+        pmRaMasYr,
+        pmDecMasYr,
         gaiaRow?.radialVelocityKmS ?? null,
       ),
       constellationIds,
@@ -614,7 +711,7 @@ const body = `/**
  *
  * Stellar astrometry: ESA Gaia mission Data Release 3, processed by the Gaia
  * Data Processing and Analysis Consortium, with Hipparcos Main Catalogue
- * fallback for bright or line stars absent from Gaia.
+ * fallback for bright or line stars when Gaia lacks a usable parallax.
  * Sources: ${GAIA_PAGE} and ${HIPPARCOS_PAGE}
  *
  * Landmark source URLs are retained on each record.

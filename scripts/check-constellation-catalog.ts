@@ -133,6 +133,44 @@ for (const star of CONSTELLATION_STARS) {
   )
 }
 
+// Bright Orion figure stars that Gaia often saturates still need Hipparcos
+// parallax so the slice can place Mintaka, Saiph, and μ Ori (and their edges).
+for (const hip of [25930, 27366, 28614]) {
+  const star = CONSTELLATION_STARS.find((entry) => entry.hip === hip)
+  assert(star, `Orion figure star HIP ${hip} must exist in the catalog`)
+  assert(
+    star.constellationIds.includes('orion'),
+    `HIP ${hip} must remain an Orion figure star`,
+  )
+  assert(
+    star.distanceLy !== null &&
+      star.distanceErrorLy !== null &&
+      star.distanceQuality !== 'unavailable' &&
+      star.distanceSource === 'Hipparcos parallax',
+    `HIP ${hip} must fall back to a Hipparcos parallax when Gaia has no usable distance`,
+  )
+}
+
+// Alula Australis (ξ UMa) has no Hipparcos RAICRS/DEICRS solution. Blank fields
+// must not become (0, 0); sexagesimal RAhms/DEdms (or Gaia) supply degrees.
+const alulaAustralis = CONSTELLATION_STARS.find((entry) => entry.hip === 55203)
+assert(alulaAustralis, 'Alula Australis (HIP 55203) must exist in the catalog')
+assert(
+  alulaAustralis.constellationIds.includes('ursa-major'),
+  'HIP 55203 must remain an Ursa Major figure star',
+)
+assert(
+  Math.abs(alulaAustralis.raDeg - 169.545423) < 0.02 &&
+    Math.abs(alulaAustralis.decDeg - 31.529161) < 0.02,
+  'HIP 55203 must use real sky coordinates near the IAU WGSN position',
+)
+for (const star of CONSTELLATION_STARS) {
+  assert(
+    !(star.raDeg === 0 && star.decDeg === 0),
+    `${star.id} must not place at (0, 0) from blank Hipparcos ICRS fields`,
+  )
+}
+
 console.log(
   `ok  constellation catalog: ${CONSTELLATIONS.length} constellations, ${CONSTELLATION_STARS.length} stars, ${CONSTELLATION_LANDMARKS.length} Milky Way landmarks`,
 )
