@@ -2,17 +2,20 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
 import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
+import type { ConstellationDragMode } from './constellationDragControls.ts'
 
 defineProps<{
   showStems: boolean
   depthMode: ConstellationDepthMode
   previewFigureLines: boolean
+  dragMode: ConstellationDragMode
 }>()
 
 const emit = defineEmits<{
   'update:show-stems': [value: boolean]
   'update:depth-mode': [value: ConstellationDepthMode]
   'update:preview-figure-lines': [value: boolean]
+  'update:drag-mode': [value: ConstellationDragMode]
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -60,6 +63,10 @@ function emitPreviewLinesChange(event: Event): void {
 
 function emitDepthChange(event: Event): void {
   emit('update:depth-mode', (event.target as HTMLInputElement).value as ConstellationDepthMode)
+}
+
+function emitDragModeChange(event: Event): void {
+  emit('update:drag-mode', (event.target as HTMLInputElement).value as ConstellationDragMode)
 }
 
 onMounted(() => document.addEventListener('pointerdown', handleDocumentPointerDown))
@@ -121,6 +128,38 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
           <small>Connect placed objects to the reference plane.</small>
         </span>
       </label>
+
+      <fieldset>
+        <legend>Mouse controls</legend>
+        <label class="constellation-settings__choice">
+          <input
+            type="radio"
+            name="constellation-drag-mode"
+            data-settings-drag-mode
+            value="normal"
+            :checked="dragMode === 'normal'"
+            @change="emitDragModeChange"
+          />
+          <span>
+            <strong>Normal</strong>
+            <small>Dragging moves the sky with your cursor.</small>
+          </span>
+        </label>
+        <label class="constellation-settings__choice">
+          <input
+            type="radio"
+            name="constellation-drag-mode"
+            data-settings-drag-mode
+            value="inverted"
+            :checked="dragMode === 'inverted'"
+            @change="emitDragModeChange"
+          />
+          <span>
+            <strong>Inverted</strong>
+            <small>Dragging moves the sky against your cursor.</small>
+          </span>
+        </label>
+      </fieldset>
 
       <fieldset>
         <legend>Depth</legend>

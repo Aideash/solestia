@@ -23,6 +23,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
 import { constellationAtJ2000, unitDirectionToEquatorial } from '../../lib/constellationRegions.ts'
 import type { Vec3 } from '../../lib/kepler.ts'
+import {
+  orbitRotateSpeed,
+  overviewDragDelta,
+  type ConstellationDragMode,
+} from './constellationDragControls.ts'
 import { canRebuildInPlace, type SceneMode } from './constellationSceneLifecycle.ts'
 import {
   FOCUS_GOLD_COLOR,
@@ -45,6 +50,7 @@ const props = withDefaults(
     depthMode?: ConstellationDepthMode
     previewFigureLines?: boolean
     listPreviewId?: string | null
+    dragMode?: ConstellationDragMode
   }>(),
   {
     selectedId: null,
@@ -52,6 +58,7 @@ const props = withDefaults(
     depthMode: 'compressed',
     previewFigureLines: true,
     listPreviewId: null,
+    dragMode: 'normal',
   },
 )
 
@@ -70,7 +77,6 @@ const DRAG_THRESHOLD_PX = 6
 const CLICK_MAX_MS = 500
 const PICK_THRESHOLD = 1.6
 const NAME_PICK_THRESHOLD = 2.4
-const ROTATE_SPEED = 0.0045
 const MAX_PITCH = (85 * Math.PI) / 180
 
 // --- Template refs and accessible state ------------------------------------
@@ -753,6 +759,7 @@ function enableControls(): void {
     controls.enablePan = false
     controls.addEventListener('change', requestRender)
   }
+  controls.rotateSpeed = orbitRotateSpeed(props.dragMode)
   controls.target.set(0, 0, 0)
   controls.enabled = true
   controls.update()
@@ -877,8 +884,13 @@ function onPointerMove(event: PointerEvent): void {
     const dy = event.clientY - pointerDownY
     if (!pointerMoved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) pointerMoved = true
     if (!pointerMoved) return
-    yaw -= (event.movementX || 0) * ROTATE_SPEED
-    pitch += (event.movementY || 0) * ROTATE_SPEED
+    const { yawDelta, pitchDelta } = overviewDragDelta({
+      movementX: event.movementX || 0,
+      movementY: event.movementY || 0,
+      mode: props.dragMode,
+    })
+    yaw += yawDelta
+    pitch += pitchDelta
     pitch = Math.min(MAX_PITCH, Math.max(-MAX_PITCH, pitch))
     applyOverviewCamera()
     return
@@ -1057,6 +1069,13 @@ function requestSelectionRebuild(): void {
 watch(() => props.depthMode, requestSelectionRebuild)
 
 watch(() => props.showStems, requestSelectionRebuild)
+
+watch(
+  () => props.dragMode,
+  () => {
+    if (controls) controls.rotateSpeed = orbitRotateSpeed(props.dragMode)
+  },
+)
 
 // --- Disposal --------------------------------------------------------------
 

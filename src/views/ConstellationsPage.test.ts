@@ -14,6 +14,7 @@ vi.mock('../components/constellations/ConstellationScene.vue', () => ({
       depthMode: { type: String, default: 'compressed' },
       previewFigureLines: { type: Boolean, default: true },
       listPreviewId: { type: String, default: null },
+      dragMode: { type: String, default: 'normal' },
     },
     emits: ['select', 'scale-change'],
     template: '<div class="scene-contract" />',
@@ -112,6 +113,7 @@ describe('ConstellationsPage', () => {
       showStems: false,
       depthMode: 'compressed',
       previewFigureLines: true,
+      dragMode: 'normal',
     })
 
     scene.vm.$emit('scale-change', {
@@ -125,11 +127,13 @@ describe('ConstellationsPage', () => {
     await wrapper.get('input[data-settings-preview-lines]').setValue(false)
     await wrapper.get('input[data-settings-stems]').setValue(true)
     await wrapper.get('input[type="radio"][value="true"]').setValue()
+    await wrapper.get('input[data-settings-drag-mode][value="inverted"]').setValue()
 
     expect(scene.props()).toMatchObject({
       showStems: true,
       depthMode: 'true',
       previewFigureLines: false,
+      dragMode: 'inverted',
     })
     expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
       'True scale',

@@ -1,6 +1,7 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
+import type { ConstellationDragMode } from './constellationDragControls.ts'
 import ConstellationSettings from './ConstellationSettings.vue'
 
 const mountedWrappers: VueWrapper[] = []
@@ -9,10 +10,11 @@ function mountSettings(
   showStems = false,
   depthMode: 'compressed' | 'true' = 'compressed',
   previewFigureLines = true,
+  dragMode: ConstellationDragMode = 'normal',
 ) {
   const wrapper = mount(ConstellationSettings, {
     attachTo: document.body,
-    props: { showStems, depthMode, previewFigureLines },
+    props: { showStems, depthMode, previewFigureLines, dragMode },
   })
   mountedWrappers.push(wrapper)
   return wrapper
@@ -33,9 +35,7 @@ describe('ConstellationSettings', () => {
     await button.trigger('click')
     expect(button.attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('[role="dialog"]').attributes('aria-label')).toBe('Constellation settings')
-    expect(document.activeElement).toBe(
-      wrapper.get('input[data-settings-preview-lines]').element,
-    )
+    expect(document.activeElement).toBe(wrapper.get('input[data-settings-preview-lines]').element)
 
     await wrapper.get('input[data-settings-preview-lines]').trigger('keydown.escape')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
@@ -86,6 +86,23 @@ describe('ConstellationSettings', () => {
     expect(wrapper.text()).toContain('Preserves physical distance')
     expect(wrapper.text()).toContain('Brings distant stars closer')
     expect(wrapper.text()).toContain('Preview figure lines')
+  })
+
+  it('reflects drag-mode props and emits inverted mouse controls', async () => {
+    const wrapper = mountSettings(false, 'compressed', true, 'normal')
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+
+    const normal = wrapper.get('input[data-settings-drag-mode][value="normal"]')
+    const inverted = wrapper.get('input[data-settings-drag-mode][value="inverted"]')
+    expect((normal.element as HTMLInputElement).checked).toBe(true)
+    expect((inverted.element as HTMLInputElement).checked).toBe(false)
+
+    await inverted.setValue()
+
+    expect(wrapper.emitted('update:drag-mode')).toEqual([['inverted']])
+    expect(wrapper.text()).toContain('Mouse controls')
+    expect(wrapper.text()).toContain('Dragging moves the sky with your cursor')
+    expect(wrapper.text()).toContain('Dragging moves the sky against your cursor')
   })
 
   it('shows source links, licenses, revisions, and no velocity control', async () => {

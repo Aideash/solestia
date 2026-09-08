@@ -3,9 +3,10 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ConstellationScaleLegend from '../components/constellations/ConstellationScaleLegend.vue'
 import ConstellationScene from '../components/constellations/ConstellationScene.vue'
-import type { ConstellationScaleData } from '../components/constellations/constellationSceneModel.ts'
 import ConstellationSearch from '../components/constellations/ConstellationSearch.vue'
 import ConstellationSettings from '../components/constellations/ConstellationSettings.vue'
+import type { ConstellationDragMode } from '../components/constellations/constellationDragControls.ts'
+import type { ConstellationScaleData } from '../components/constellations/constellationSceneModel.ts'
 import { constellationById } from '../data/constellations.ts'
 import type { ConstellationDepthMode } from '../lib/constellationGeometry.ts'
 
@@ -15,6 +16,7 @@ const showStems = ref(false)
 const previewFigureLines = ref(true)
 const listPreviewId = ref<string | null>(null)
 const depthMode = ref<ConstellationDepthMode>('compressed')
+const dragMode = ref<ConstellationDragMode>('normal')
 const scale = ref<ConstellationScaleData | null>(null)
 const invalidMessage = ref<string | null>(null)
 
@@ -90,6 +92,7 @@ function dismissInvalidMessage(): void {
           :depth-mode="depthMode"
           :preview-figure-lines="previewFigureLines"
           :list-preview-id="listPreviewId"
+          :drag-mode="dragMode"
           @select="selectConstellation"
           @scale-change="scale = $event"
         />
@@ -114,6 +117,7 @@ function dismissInvalidMessage(): void {
             v-model:show-stems="showStems"
             v-model:depth-mode="depthMode"
             v-model:preview-figure-lines="previewFigureLines"
+            v-model:drag-mode="dragMode"
           />
         </div>
         <div v-if="scale" class="constellations-page__scale">
