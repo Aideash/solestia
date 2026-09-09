@@ -1,8 +1,8 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CONSTELLATIONS } from '../../data/constellations.ts'
-import ConstellationSearch from './ConstellationSearch.vue'
+import { CONSTELLATIONS } from '../../../data/constellations.ts'
+import ConstellationSearch from '../../../components/constellations/ConstellationSearch.vue'
 
 const mountedWrappers: ReturnType<typeof mount>[] = []
 const scrollIntoView = vi.fn()

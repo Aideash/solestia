@@ -18,8 +18,8 @@ import {
   type ConstellationLocalFrame,
   type ConstellationSlice,
   type StemSegment,
-} from '../../lib/constellationGeometry.ts'
-import type { Vec3 } from '../../lib/kepler.ts'
+} from '../constellationGeometry.ts'
+import type { Vec3 } from '../kepler.ts'
 
 /**
  * Pure catalog-to-renderer adapter for the constellation slice viewer. This module

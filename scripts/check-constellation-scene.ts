@@ -16,7 +16,7 @@ import {
   spectralColor,
   starPointSize,
   type RgbColor,
-} from '../src/components/constellations/constellationSceneModel.ts'
+} from '../src/lib/constellations/constellationSceneModel.ts'
 import {
   DESELECT_REORIENT_END,
   deselectMorphAmount,
@@ -25,7 +25,7 @@ import {
   earthPovCameraOffset,
   frontFacingCameraOffset,
   yawPitchFromDirection,
-} from '../src/components/constellations/constellationSceneTransition.ts'
+} from '../src/lib/constellations/constellationSceneTransition.ts'
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message)
@@ -589,8 +589,18 @@ assertClose(offAxisEarthPose.z, offAxisEarth.z, 1e-9, 'deselect reorient mid mat
 const atReorientEnd = deselectPhaseWeights(DESELECT_REORIENT_END)
 assertClose(atReorientEnd.reorient, 1, 1e-9, 'reorient completes at phase boundary')
 assertClose(atReorientEnd.zoomMorph, 0, 1e-9, 'zoom has not started at phase boundary')
-assertClose(deselectMorphAmount(DESELECT_REORIENT_END), 1, 1e-9, 'morph stays on slice through reorient')
-assertClose(deselectOpacityAmount(DESELECT_REORIENT_END), 0, 1e-9, 'overview stays dim through reorient')
+assertClose(
+  deselectMorphAmount(DESELECT_REORIENT_END),
+  1,
+  1e-9,
+  'morph stays on slice through reorient',
+)
+assertClose(
+  deselectOpacityAmount(DESELECT_REORIENT_END),
+  0,
+  1e-9,
+  'overview stays dim through reorient',
+)
 assertClose(deselectMorphAmount(1), 0, 1e-9, 'morph ends on the celestial sphere')
 assertClose(deselectOpacityAmount(1), 1, 1e-9, 'overview opacity fully restores')
 

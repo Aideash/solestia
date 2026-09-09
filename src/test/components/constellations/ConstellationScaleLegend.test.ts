@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import ConstellationScaleLegend from './ConstellationScaleLegend.vue'
+import ConstellationScaleLegend from '../../../components/constellations/ConstellationScaleLegend.vue'
 
 describe('ConstellationScaleLegend', () => {
   it('labels compressed depth and formats a light-year maximum', () => {

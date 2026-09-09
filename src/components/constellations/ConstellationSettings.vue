@@ -2,8 +2,8 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, useId, type CSSProperties } from 'vue'
 import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
 import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
-import type { ConstellationDragMode } from './constellationDragControls.ts'
-import { placeSettingsPopup } from './constellationSettingsPlacement.ts'
+import type { ConstellationDragMode } from '../../lib/constellations/constellationDragControls.ts'
+import { placeSettingsPopup } from '../../lib/constellations/constellationSettingsPlacement.ts'
 
 defineProps<{
   showStems: boolean
@@ -220,19 +220,6 @@ onBeforeUnmount(() => {
             <input
               type="radio"
               name="constellation-depth"
-              value="compressed"
-              :checked="depthMode === 'compressed'"
-              @change="emitDepthChange"
-            />
-            <span>
-              <strong>Compressed depth</strong>
-              <small>Brings distant stars closer while preserving their order.</small>
-            </span>
-          </label>
-          <label class="constellation-settings__choice">
-            <input
-              type="radio"
-              name="constellation-depth"
               value="true"
               :checked="depthMode === 'true'"
               @change="emitDepthChange"
@@ -240,6 +227,19 @@ onBeforeUnmount(() => {
             <span>
               <strong>True scale</strong>
               <small>Preserves physical distance in every direction.</small>
+            </span>
+          </label>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-depth"
+              value="compressed"
+              :checked="depthMode === 'compressed'"
+              @change="emitDepthChange"
+            />
+            <span>
+              <strong>Compressed depth</strong>
+              <small>Brings distant stars closer while preserving their order.</small>
             </span>
           </label>
         </fieldset>
@@ -293,8 +293,16 @@ onBeforeUnmount(() => {
   background: color-mix(in srgb, #02040a 88%, transparent);
   border: 1px solid color-mix(in srgb, #73d5e8 38%, transparent);
   border-radius: $radius-sm;
+  transition:
+    background 100ms ease-in-out,
+    color 100ms ease-in-out;
   font: inherit;
   cursor: pointer;
+
+  &:hover {
+    background: #050c1f;
+    color: #73d5e8;
+  }
 
   &:focus-visible {
     outline: 2px solid #f5c542;

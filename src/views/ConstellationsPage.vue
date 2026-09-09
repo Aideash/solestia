@@ -5,9 +5,9 @@ import ConstellationScaleLegend from '../components/constellations/Constellation
 import ConstellationScene from '../components/constellations/ConstellationScene.vue'
 import ConstellationSearch from '../components/constellations/ConstellationSearch.vue'
 import ConstellationSettings from '../components/constellations/ConstellationSettings.vue'
-import type { ConstellationDragMode } from '../components/constellations/constellationDragControls.ts'
-import type { ConstellationScaleData } from '../components/constellations/constellationSceneModel.ts'
-import { constellationById } from '../data/constellations.ts'
+import type { ConstellationDragMode } from '../lib/constellations/constellationDragControls.ts'
+import type { ConstellationScaleData } from '../lib/constellations/constellationSceneModel.ts'
+import { constellationById, constellationSymbol } from '../data/constellations.ts'
 import type { ConstellationDepthMode } from '../lib/constellationGeometry.ts'
 
 const route = useRoute()
@@ -16,7 +16,7 @@ const sceneRef = ref<{ goToEarthPov: () => void } | null>(null)
 const showStems = ref(false)
 const previewFigureLines = ref(true)
 const listPreviewId = ref<string | null>(null)
-const depthMode = ref<ConstellationDepthMode>('compressed')
+const depthMode = ref<ConstellationDepthMode>('true')
 const dragMode = ref<ConstellationDragMode>('normal')
 const scale = ref<ConstellationScaleData | null>(null)
 const invalidMessage = ref<string | null>(null)
@@ -28,7 +28,9 @@ const selectedId = computed(() => {
 const selectedConstellation = computed(() =>
   selectedId.value ? constellationById(selectedId.value) : undefined,
 )
-
+const selectedConstellationSymbol = computed(() =>
+  selectedId.value ? constellationSymbol(selectedId.value) : undefined,
+)
 watch(
   selectedId,
   (id) => {
@@ -106,7 +108,12 @@ function dismissInvalidMessage(): void {
         <div class="constellations-page__intro">
           <div v-if="selectedConstellation" data-constellation-detail>
             <p class="constellations-page__eyebrow">Constellation slice</p>
-            <h2>{{ selectedConstellation.name }}</h2>
+            <h2>
+              {{ selectedConstellation.name }}
+              <span v-if="selectedConstellationSymbol" class="constellations-page__symbol">{{
+                selectedConstellationSymbol
+              }}</span>
+            </h2>
             <p>Drag to orbit around the slice and reveal its stellar depth.</p>
             <div class="constellations-page__actions">
               <button type="button" data-return-to-sky @click="returnToSky">Return to sky</button>
@@ -156,6 +163,7 @@ $header-reserve-compact: 4rem;
   color: #fff4d6;
   background: #05070d;
   overflow: hidden;
+  border-top: 1px solid var(--border);
 }
 
 .constellations-page__notice {
@@ -259,6 +267,13 @@ $header-reserve-compact: 4rem;
     text-transform: uppercase;
   }
 
+  .constellations-page__symbol {
+    font-size: 1.2rem;
+    font-weight: 600;
+    line-height: 1;
+    color: #73d5e8;
+  }
+
   button {
     margin-top: 0;
     padding: $spacing-xs $spacing-sm;
@@ -267,8 +282,13 @@ $header-reserve-compact: 4rem;
     background: rgb(2 4 10 / 78%);
     border: 1px solid rgb(115 213 232 / 45%);
     border-radius: $radius-sm;
+    transition: background 100ms ease-in-out;
     font: inherit;
     cursor: pointer;
+
+    &:hover {
+      background: #1d1d30;
+    }
 
     &:focus-visible {
       outline: 2px solid #f5c542;

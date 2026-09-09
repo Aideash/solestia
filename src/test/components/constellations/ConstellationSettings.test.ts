@@ -1,8 +1,8 @@
 import { DOMWrapper, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
-import type { ConstellationDragMode } from './constellationDragControls.ts'
-import ConstellationSettings from './ConstellationSettings.vue'
+import { CONSTELLATION_ATTRIBUTIONS } from '../../../data/constellations.ts'
+import type { ConstellationDragMode } from '../../../lib/constellations/constellationDragControls.ts'
+import ConstellationSettings from '../../../components/constellations/ConstellationSettings.vue'
 
 const mountedWrappers: VueWrapper[] = []
 const mountHosts: HTMLElement[] = []

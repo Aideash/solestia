@@ -1,6 +1,6 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import ConstellationScene from './ConstellationScene.vue'
+import ConstellationScene from '../../../components/constellations/ConstellationScene.vue'
 
 // A mocked WebGL boundary: only the renderer touches the GPU, so mocking just
 // `WebGLRenderer` lets the rest of Three.js (scene graph, math, OrbitControls)

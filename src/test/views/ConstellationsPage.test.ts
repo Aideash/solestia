@@ -2,8 +2,8 @@ import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-uti
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import ConstellationScene from '../components/constellations/ConstellationScene.vue'
-import ConstellationsPage from './ConstellationsPage.vue'
+import ConstellationScene from '../../components/constellations/ConstellationScene.vue'
+import ConstellationsPage from '../../views/ConstellationsPage.vue'
 
 const sceneApi = vi.hoisted(() => ({
   goToEarthPov: vi.fn(),

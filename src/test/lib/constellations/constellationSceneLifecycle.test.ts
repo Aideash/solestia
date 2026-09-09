@@ -3,7 +3,7 @@ import {
   canRebuildInPlace,
   shouldAnimateCamera,
   type SceneMode,
-} from './constellationSceneLifecycle.ts'
+} from '../../../lib/constellations/constellationSceneLifecycle.ts'
 
 describe('constellation scene lifecycle policy', () => {
   it('remaps only a settled slice in place', () => {

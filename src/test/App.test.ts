@@ -2,8 +2,8 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import App from './App.vue'
-import ConstellationsPage from './views/ConstellationsPage.vue'
+import App from '../App.vue'
+import ConstellationsPage from '../views/ConstellationsPage.vue'
 
 // The immersive page mounts a WebGL scene that jsdom can't run; the shell tests
 // only care about keyboard routing, so stub the scene to a passive contract.

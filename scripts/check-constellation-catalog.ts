@@ -138,10 +138,7 @@ for (const star of CONSTELLATION_STARS) {
 for (const hip of [25930, 27366, 28614]) {
   const star = CONSTELLATION_STARS.find((entry) => entry.hip === hip)
   assert(star, `Orion figure star HIP ${hip} must exist in the catalog`)
-  assert(
-    star.constellationIds.includes('orion'),
-    `HIP ${hip} must remain an Orion figure star`,
-  )
+  assert(star.constellationIds.includes('orion'), `HIP ${hip} must remain an Orion figure star`)
   assert(
     star.distanceLy !== null &&
       star.distanceErrorLy !== null &&

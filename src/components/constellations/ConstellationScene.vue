@@ -27,13 +27,16 @@ import {
   orbitRotateSpeed,
   overviewDragDelta,
   type ConstellationDragMode,
-} from './constellationDragControls.ts'
-import { sliceOrbitMinDistance, syncGeometryBounds } from './constellationSceneBounds.ts'
+} from '../../lib/constellations/constellationDragControls.ts'
+import {
+  sliceOrbitMinDistance,
+  syncGeometryBounds,
+} from '../../lib/constellations/constellationSceneBounds.ts'
 import {
   canRebuildInPlace,
   shouldAnimateCamera,
   type SceneMode,
-} from './constellationSceneLifecycle.ts'
+} from '../../lib/constellations/constellationSceneLifecycle.ts'
 import {
   FOCUS_GOLD_COLOR,
   SLICE_GEOMETRY_COLOR,
@@ -47,7 +50,7 @@ import {
   type ConstellationSelectionModel,
   type NameWorthyPick,
   type OverviewStarField,
-} from './constellationSceneModel.ts'
+} from '../../lib/constellations/constellationSceneModel.ts'
 import {
   deselectMorphAmount,
   deselectOpacityAmount,
@@ -55,7 +58,7 @@ import {
   earthPovCameraOffset,
   easeInOutCubic,
   yawPitchFromDirection,
-} from './constellationSceneTransition.ts'
+} from '../../lib/constellations/constellationSceneTransition.ts'
 
 const props = withDefaults(
   defineProps<{

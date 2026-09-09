@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   sliceOrbitMinDistance,
   syncGeometryBounds,
-} from './constellationSceneBounds.ts'
+} from '../../../lib/constellations/constellationSceneBounds.ts'
 
 /**
  * Reproduce the zoom-disappearance failure mode: morph moves vertices to the

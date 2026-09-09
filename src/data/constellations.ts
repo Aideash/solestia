@@ -220,6 +220,21 @@ const CONSTELLATIONS_BY_ID = new Map(
   CONSTELLATIONS.map((constellation) => [constellation.id, constellation]),
 )
 
+const ZODIAC_SYMBOLS = {
+  aries: '♈',
+  taurus: '♉',
+  gemini: '♊',
+  cancer: '♋',
+  leo: '♌',
+  virgo: '♍',
+  libra: '♎',
+  scorpio: '♏',
+  sagittarius: '♐',
+  capricorn: '♑',
+  aquarius: '♒',
+  pisces: '♓',
+}
+
 type SearchEntry = {
   constellation: Constellation
   terms: readonly string[]
@@ -246,6 +261,10 @@ const SEARCH_ENTRIES: readonly SearchEntry[] = CONSTELLATIONS.map((constellation
 
 export function constellationById(id: string): Constellation | undefined {
   return CONSTELLATIONS_BY_ID.get(id)
+}
+
+export function constellationSymbol(id: string): string | undefined {
+  return ZODIAC_SYMBOLS[id as keyof typeof ZODIAC_SYMBOLS]
 }
 
 function searchRank(terms: readonly string[], query: string): number {

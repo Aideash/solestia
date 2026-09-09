@@ -3,7 +3,7 @@ import {
   orbitRotateSpeed,
   overviewDragDelta,
   type ConstellationDragMode,
-} from './constellationDragControls.ts'
+} from '../../../lib/constellations/constellationDragControls.ts'
 
 const ROTATE_SPEED = 0.0045
 

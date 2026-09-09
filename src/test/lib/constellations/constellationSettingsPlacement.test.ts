@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { placeSettingsPopup } from './constellationSettingsPlacement.ts'
+import { placeSettingsPopup } from '../../../lib/constellations/constellationSettingsPlacement.ts'
 
 describe('placeSettingsPopup', () => {
   it('opens below a top-right trigger and clamps width to the viewport', () => {

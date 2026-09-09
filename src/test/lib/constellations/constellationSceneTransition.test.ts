@@ -8,7 +8,7 @@ import {
   easeInOutCubic,
   frontFacingCameraOffset,
   yawPitchFromDirection,
-} from './constellationSceneTransition.ts'
+} from '../../../lib/constellations/constellationSceneTransition.ts'
 
 describe('yawPitchFromDirection', () => {
   it('maps +X to yaw 0 and pitch 0', () => {

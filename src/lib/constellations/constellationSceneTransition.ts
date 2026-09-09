@@ -1,4 +1,4 @@
-import type { Vec3 } from '../../lib/kepler.ts'
+import type { Vec3 } from '../kepler.ts'
 
 /**
  * Pure timing and orientation helpers for constellation scene camera transitions.

@@ -34,7 +34,11 @@ export function sliceOrbitMinDistance(
   const nearClearance = Math.max(cameraNear, 0) * 10
   const inspectFloor = Math.max(targetRadius, 0) * 0.05
   const base = Math.max(nearClearance, inspectFloor, 1)
-  if (!(typeof focusDistance === 'number') || !Number.isFinite(focusDistance) || focusDistance <= 0) {
+  if (
+    !(typeof focusDistance === 'number') ||
+    !Number.isFinite(focusDistance) ||
+    focusDistance <= 0
+  ) {
     return base
   }
   if (focusDistance >= base) return base
