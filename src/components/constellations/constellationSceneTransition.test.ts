@@ -92,6 +92,22 @@ describe('earthPovCameraOffset', () => {
     })
     expect(offset.z).toBeCloseTo(-90, 6)
   })
+
+  it('diverges from -depth at |earth| when the figure centroid is off-axis', () => {
+    // Reorient used to call frontFacingCameraOffset, which pans away from the
+    // Earth POV button's true-scale stand whenever Earth is not on pure -depth.
+    const distance = Math.hypot(earthWorld.x, earthWorld.y, earthWorld.z)
+    const front = frontFacingCameraOffset(depth, distance)
+    const earth = earthPovCameraOffset({
+      depthMode: 'true',
+      earthWorld,
+      depth,
+      currentDistance: distance,
+      fallbackDistance: 144,
+    })
+    expect(Math.hypot(earth.x - front.x, earth.y - front.y, earth.z - front.z)).toBeGreaterThan(1)
+    expect(earth).toEqual(earthWorld)
+  })
 })
 
 describe('deselect phase weights', () => {

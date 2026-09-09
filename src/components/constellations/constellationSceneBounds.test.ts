@@ -63,4 +63,27 @@ describe('sliceOrbitMinDistance', () => {
     expect(min).toBeGreaterThan(0.1)
     expect(min).toBeLessThan(60)
   })
+
+  it('lowers the inspect floor so an Earth focus closer than 5% radius can stick', () => {
+    // Sagittarius true-scale Earth sits ~1.66 from the orbit target after fit,
+    // below the default inspect floor of 3. Without this, Earth POV animates in
+    // and OrbitControls.update() clamps the camera back out.
+    const base = sliceOrbitMinDistance(0.1, 60)
+    expect(base).toBe(3)
+
+    const earthFocus = 1.655
+    const min = sliceOrbitMinDistance(0.1, 60, earthFocus)
+    expect(min).toBeCloseTo(earthFocus, 5)
+    expect(min).toBeLessThan(base)
+  })
+
+  it('never drops below near-plane clearance even when focus is closer', () => {
+    const nearClearance = 0.1 * 10
+    const min = sliceOrbitMinDistance(0.1, 60, 0.2)
+    expect(min).toBe(nearClearance)
+  })
+
+  it('keeps the inspect floor when focus is farther out', () => {
+    expect(sliceOrbitMinDistance(0.1, 60, 10)).toBe(3)
+  })
 })

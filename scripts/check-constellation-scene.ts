@@ -22,6 +22,7 @@ import {
   deselectMorphAmount,
   deselectOpacityAmount,
   deselectPhaseWeights,
+  earthPovCameraOffset,
   frontFacingCameraOffset,
   yawPitchFromDirection,
 } from '../src/components/constellations/constellationSceneTransition.ts'
@@ -561,6 +562,29 @@ assertClose(
   1e-6,
   'front-facing camera must sit on -depth',
 )
+
+// True-scale Earth is the centroid offset, not pure -depth — deselect reorient
+// must share earthPovCameraOffset with the Earth POV button or it pans off-axis.
+const offAxisEarth = { x: 12, y: -5, z: -90 }
+const offAxisDistance = Math.hypot(offAxisEarth.x, offAxisEarth.y, offAxisEarth.z)
+const offAxisFront = frontFacingCameraOffset({ x: 0, y: 0, z: 1 }, offAxisDistance)
+const offAxisEarthPose = earthPovCameraOffset({
+  depthMode: 'true',
+  earthWorld: offAxisEarth,
+  depth: { x: 0, y: 0, z: 1 },
+  currentDistance: offAxisDistance,
+})
+assert(
+  Math.hypot(
+    offAxisEarthPose.x - offAxisFront.x,
+    offAxisEarthPose.y - offAxisFront.y,
+    offAxisEarthPose.z - offAxisFront.z,
+  ) > 1,
+  'true-scale Earth POV must differ from -depth when the centroid is off-axis',
+)
+assertClose(offAxisEarthPose.x, offAxisEarth.x, 1e-9, 'deselect reorient mid matches Earth x')
+assertClose(offAxisEarthPose.y, offAxisEarth.y, 1e-9, 'deselect reorient mid matches Earth y')
+assertClose(offAxisEarthPose.z, offAxisEarth.z, 1e-9, 'deselect reorient mid matches Earth z')
 
 const atReorientEnd = deselectPhaseWeights(DESELECT_REORIENT_END)
 assertClose(atReorientEnd.reorient, 1, 1e-9, 'reorient completes at phase boundary')

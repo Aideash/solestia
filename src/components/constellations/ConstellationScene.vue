@@ -29,7 +29,11 @@ import {
   type ConstellationDragMode,
 } from './constellationDragControls.ts'
 import { sliceOrbitMinDistance, syncGeometryBounds } from './constellationSceneBounds.ts'
-import { canRebuildInPlace, shouldAnimateCamera, type SceneMode } from './constellationSceneLifecycle.ts'
+import {
+  canRebuildInPlace,
+  shouldAnimateCamera,
+  type SceneMode,
+} from './constellationSceneLifecycle.ts'
 import {
   FOCUS_GOLD_COLOR,
   SLICE_GEOMETRY_COLOR,
@@ -50,7 +54,6 @@ import {
   deselectPhaseWeights,
   earthPovCameraOffset,
   easeInOutCubic,
-  frontFacingCameraOffset,
   yawPitchFromDirection,
 } from './constellationSceneTransition.ts'
 
@@ -713,6 +716,9 @@ function finishEarthPovAnimation(): void {
 function goToEarthPov(): void {
   if (!camera || sceneMode !== 'slice' || !activeSelectionDepth) return
   cancelEarthPovAnimation()
+  // Earth may sit inside the default inspect floor after fit-scale; refresh the
+  // dolly limit before tweening so OrbitControls.update() cannot kick us back out.
+  syncOrbitDistanceLimits()
 
   const facing = earthPovCameraOffset({
     depthMode: props.depthMode,
@@ -751,9 +757,17 @@ function startDeselectTransition(): void {
     depth = { x: look.x, y: look.y, z: look.z }
   }
   activeSelectionDepth = depth
-  const facing = frontFacingCameraOffset(depth, camera.position.length(), SLICE_CAMERA_DISTANCE)
+  // Same stand as the Earth POV control — not raw -depth — so reorient is a
+  // no-op when already there and does not pan off-axis in true scale.
+  const facing = earthPovCameraOffset({
+    depthMode: props.depthMode,
+    earthWorld: activeEarthWorldOffset ?? { x: 0, y: 0, z: 0 },
+    depth,
+    currentDistance: camera.position.length(),
+    fallbackDistance: SLICE_CAMERA_DISTANCE,
+  })
 
-  // Phase 1 endpoint: Earth line of sight at slice distance, looking at origin.
+  // Phase 1 endpoint: Earth POV at slice distance, looking at origin.
   // Phase 2 endpoint: camera at Earth looking along the constellation's sky direction.
   camStart = camera.position.clone()
   camMid.set(facing.x, facing.y, facing.z)
@@ -859,11 +873,20 @@ function enableControls(): void {
     controls.addEventListener('start', cancelEarthPovAnimation)
   }
   controls.rotateSpeed = orbitRotateSpeed(props.dragMode)
-  controls.minDistance = sliceOrbitMinDistance(camera.near, SLICE_TARGET_RADIUS)
-  controls.maxDistance = SLICE_TARGET_RADIUS * 20
+  syncOrbitDistanceLimits()
   controls.target.set(0, 0, 0)
   controls.enabled = true
   controls.update()
+}
+
+/** Keep dolly limits in sync with the fitted Earth stand so Earth POV can stick. */
+function syncOrbitDistanceLimits(): void {
+  if (!controls || !camera) return
+  const earthDistance = activeEarthWorldOffset
+    ? Math.hypot(activeEarthWorldOffset.x, activeEarthWorldOffset.y, activeEarthWorldOffset.z)
+    : undefined
+  controls.minDistance = sliceOrbitMinDistance(camera.near, SLICE_TARGET_RADIUS, earthDistance)
+  controls.maxDistance = SLICE_TARGET_RADIUS * 20
 }
 
 function disableControls(): void {
@@ -1131,6 +1154,7 @@ function rebuildSelectionInPlace(): void {
   buildSelection(model)
   // Snap to the final placement; this is a display remap, not a re-entry.
   applyTransitionProgress(1)
+  syncOrbitDistanceLimits()
   requestRender()
 }
 
