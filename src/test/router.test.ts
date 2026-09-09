@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { router } from './router.ts'
+import { router } from '../router.ts'
 
 describe('constellation routes', () => {
   it('registers overview and detail with one timeless immersive page loader', () => {

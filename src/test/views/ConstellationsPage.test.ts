@@ -9,7 +9,7 @@ const sceneApi = vi.hoisted(() => ({
   goToEarthPov: vi.fn(),
 }))
 
-vi.mock('../components/constellations/ConstellationScene.vue', () => ({
+vi.mock('../../components/constellations/ConstellationScene.vue', () => ({
   default: defineComponent({
     name: 'ConstellationScene',
     props: {
@@ -133,20 +133,20 @@ describe('ConstellationsPage', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   })
 
-  it('starts compressed without stems, with figure-line preview, and flows settings into the scene', async () => {
+  it('starts true-scale without stems, with figure-line preview, and flows settings into the scene', async () => {
     const { wrapper } = await mountPage('/constellation/orion')
     const scene = wrapper.getComponent(ConstellationScene)
 
     expect(scene.props()).toMatchObject({
       selectedId: 'orion',
       showStems: false,
-      depthMode: 'compressed',
+      depthMode: 'true',
       previewFigureLines: true,
       dragMode: 'normal',
     })
 
     scene.vm.$emit('scale-change', {
-      mode: 'compressed',
+      mode: 'true',
       maxLightYears: 2_500,
       depthLimitLy: 1_000,
       measuredCount: 6,
@@ -160,17 +160,17 @@ describe('ConstellationsPage', () => {
     const dialog = new DOMWrapper(dialogEl as HTMLElement)
     await dialog.get('input[data-settings-preview-lines]').setValue(false)
     await dialog.get('input[data-settings-stems]').setValue(true)
-    await dialog.get('input[type="radio"][value="true"]').setValue()
+    await dialog.get('input[type="radio"][value="compressed"]').setValue()
     await dialog.get('input[data-settings-drag-mode][value="inverted"]').setValue()
 
     expect(scene.props()).toMatchObject({
       showStems: true,
-      depthMode: 'true',
+      depthMode: 'compressed',
       previewFigureLines: false,
       dragMode: 'inverted',
     })
     expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
-      'True scale',
+      'Compressed depth',
     )
     expect(wrapper.get('[aria-label="Constellation distance scale"]').text()).toContain(
       '2 stars omitted',

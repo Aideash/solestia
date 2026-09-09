@@ -7,7 +7,7 @@ import ConstellationsPage from '../views/ConstellationsPage.vue'
 
 // The immersive page mounts a WebGL scene that jsdom can't run; the shell tests
 // only care about keyboard routing, so stub the scene to a passive contract.
-vi.mock('./components/constellations/ConstellationScene.vue', () => ({
+vi.mock('../components/constellations/ConstellationScene.vue', () => ({
   default: {
     name: 'ConstellationScene',
     props: {
@@ -76,7 +76,9 @@ async function mountShellWithPage(path: string): Promise<{ wrapper: VueWrapper; 
       },
     ],
   })
-  await router.push(path)
+  // Mount on a non-constellation route first so App's `.app` root is in the
+  // document before ConstellationSettings resolves `Teleport to=".app"`.
+  await router.push('/')
   await router.isReady()
   const wrapper = mount(App, {
     attachTo: document.body,
@@ -86,6 +88,7 @@ async function mountShellWithPage(path: string): Promise<{ wrapper: VueWrapper; 
     },
   })
   mountedWrappers.push(wrapper)
+  await router.push(path)
   await flushPromises()
   return { wrapper, router }
 }
