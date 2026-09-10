@@ -15,6 +15,8 @@ vi.mock('../../components/constellations/ConstellationScene.vue', () => ({
     props: {
       selectedId: { type: String, default: null },
       showStems: { type: Boolean, default: false },
+      showProperMotion: { type: Boolean, default: false },
+      properMotionScope: { type: String, default: 'figure' },
       depthMode: { type: String, default: 'compressed' },
       previewFigureLines: { type: Boolean, default: true },
       listPreviewId: { type: String, default: null },
@@ -140,6 +142,8 @@ describe('ConstellationsPage', () => {
     expect(scene.props()).toMatchObject({
       selectedId: 'orion',
       showStems: false,
+      showProperMotion: false,
+      properMotionScope: 'figure',
       depthMode: 'true',
       previewFigureLines: true,
       dragMode: 'normal',
@@ -160,11 +164,17 @@ describe('ConstellationsPage', () => {
     const dialog = new DOMWrapper(dialogEl as HTMLElement)
     await dialog.get('input[data-settings-preview-lines]').setValue(false)
     await dialog.get('input[data-settings-stems]').setValue(true)
+    await dialog.get('input[data-settings-proper-motion]').setValue(true)
     await dialog.get('input[type="radio"][value="compressed"]').setValue()
     await dialog.get('input[data-settings-drag-mode][value="inverted"]').setValue()
 
+    // Scope radios appear once proper motion is enabled.
+    await dialog.get('input[data-settings-proper-motion-scope][value="all"]').setValue()
+
     expect(scene.props()).toMatchObject({
       showStems: true,
+      showProperMotion: true,
+      properMotionScope: 'all',
       depthMode: 'compressed',
       previewFigureLines: false,
       dragMode: 'inverted',

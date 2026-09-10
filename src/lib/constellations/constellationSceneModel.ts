@@ -27,8 +27,8 @@ import type { Vec3 } from '../kepler.ts'
  * pushes onto the GPU: spectral color, brightness-driven point size, overview
  * sphere positions, selection lookup, physical/local/display positions, depth-mode
  * mapping, figure-edge resolution, landmark inclusion, unavailable-distance counting,
- * slice/scale statistics, and stem endpoints. It never imports Three.js so it can be
- * exercised by a plain Node check.
+ * slice/scale statistics, stem endpoints, and proper-motion arrow geometry. It never
+ * imports Three.js so it can be exercised by a plain Node check.
  */
 
 /** Warm star-light base color (`#fff4d6`). Every star tint is anchored near it. */
@@ -75,6 +75,9 @@ export type OverviewStarField = {
 
 export type SelectedStarKind = 'figure' | 'context'
 
+/** Which placed stars receive proper-motion arrows when the overlay is enabled. */
+export type ProperMotionScope = 'figure' | 'all'
+
 export type SelectedStar = {
   readonly id: string
   readonly kind: SelectedStarKind
@@ -96,6 +99,28 @@ export type SelectedStar = {
   readonly stem: StemSegment | null
   readonly distanceLy: number | null
   readonly distanceErrorLy: number | null
+  /** μα* = μα cos(δ), milliarcseconds/year; null when unmeasured. */
+  readonly pmRaMasYr: number | null
+  readonly pmDecMasYr: number | null
+}
+
+/** Median-scale proper motion used as the log-length reference (mas/yr). */
+export const PROPER_MOTION_REFERENCE_MAS_YR = 40
+/** Display length (slice units) when total PM equals the reference. */
+export const PROPER_MOTION_LENGTH_AT_REFERENCE = 4
+/** Hard cap so extreme movers stay readable beside typical arrows. */
+export const PROPER_MOTION_MAX_ARROW_LENGTH = 12
+/** Chevron arm length as a fraction of shaft length. */
+const PROPER_MOTION_HEAD_FRACTION = 0.28
+/** Half-angle of the arrowhead chevron from the shaft axis (radians). */
+const PROPER_MOTION_HEAD_HALF_ANGLE = (28 * Math.PI) / 180
+
+export type ProperMotionArrowGeometry = {
+  /** One start per LineSegments segment (shaft + two head arms per arrow). */
+  readonly segmentStarts: readonly Vec3[]
+  readonly segmentEnds: readonly Vec3[]
+  /** Celestial unit direction parallel to each segment, for overview morph collapse. */
+  readonly morphDirections: readonly Vec3[]
 }
 
 export type SelectedLandmark = {
@@ -439,6 +464,8 @@ export function buildSelectionModel(
         stem: null,
         distanceLy: entry.star.distanceLy,
         distanceErrorLy: entry.star.distanceErrorLy,
+        pmRaMasYr: entry.star.pmRaMasYr,
+        pmDecMasYr: entry.star.pmDecMasYr,
       }
     }
     const local = toLocalCoordinates(entry.physical, frame)
@@ -459,6 +486,8 @@ export function buildSelectionModel(
       stem: projectStemToReferencePlane(displayLocal, slice.referencePlaneY),
       distanceLy: entry.star.distanceLy,
       distanceErrorLy: entry.star.distanceErrorLy,
+      pmRaMasYr: entry.star.pmRaMasYr,
+      pmDecMasYr: entry.star.pmDecMasYr,
     }
   })
 
@@ -513,6 +542,117 @@ export function buildSelectionModel(
     unavailableCount,
     scale,
   }
+}
+
+/** Log-scaled shaft length in slice display units for a total proper motion μ. */
+export function properMotionArrowLength(totalMasYr: number): number {
+  const mu = Number.isFinite(totalMasYr) && totalMasYr > 0 ? totalMasYr : 0
+  if (mu === 0) return 0
+  const scaled =
+    (PROPER_MOTION_LENGTH_AT_REFERENCE * Math.log1p(mu / PROPER_MOTION_REFERENCE_MAS_YR)) /
+    Math.log1p(1)
+  return Math.min(PROPER_MOTION_MAX_ARROW_LENGTH, scaled)
+}
+
+/**
+ * Sky-tangent proper-motion vector in ICRS equatorial Cartesian (μα* ê_α + μδ ê_δ).
+ * Magnitude is in mas/yr; only the direction of the returned vector is used for
+ * placement after normalizing in the local frame.
+ */
+export function equatorialProperMotionVector(
+  direction: Vec3,
+  pmRaMasYr: number,
+  pmDecMasYr: number,
+): Vec3 {
+  const eastRaw = { x: -direction.y, y: direction.x, z: 0 }
+  const eastLen = Math.hypot(eastRaw.x, eastRaw.y, eastRaw.z)
+  const eAlpha =
+    eastLen > 1e-8 ? { x: eastRaw.x / eastLen, y: eastRaw.y / eastLen, z: 0 } : { x: 1, y: 0, z: 0 }
+  // ê_δ = r̂ × ê_α for the standard right-handed sky basis.
+  const eDelta = {
+    x: direction.y * eAlpha.z - direction.z * eAlpha.y,
+    y: direction.z * eAlpha.x - direction.x * eAlpha.z,
+    z: direction.x * eAlpha.y - direction.y * eAlpha.x,
+  }
+  return {
+    x: pmRaMasYr * eAlpha.x + pmDecMasYr * eDelta.x,
+    y: pmRaMasYr * eAlpha.y + pmDecMasYr * eDelta.y,
+    z: pmRaMasYr * eAlpha.z + pmDecMasYr * eDelta.z,
+  }
+}
+
+function toLocalVector(vector: Vec3, frame: ConstellationLocalFrame): Vec3 {
+  return {
+    x: vector.x * frame.east.x + vector.y * frame.east.y + vector.z * frame.east.z,
+    y: vector.x * frame.north.x + vector.y * frame.north.y + vector.z * frame.north.z,
+    z: vector.x * frame.depth.x + vector.y * frame.depth.y + vector.z * frame.depth.z,
+  }
+}
+
+function normalizeOrZero(vector: Vec3): Vec3 {
+  const length = Math.hypot(vector.x, vector.y, vector.z)
+  if (!(length > 0)) return { x: 0, y: 0, z: 0 }
+  return { x: vector.x / length, y: vector.y / length, z: vector.z / length }
+}
+
+function addVec(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+}
+
+function scaleVec(vector: Vec3, scale: number): Vec3 {
+  return { x: vector.x * scale, y: vector.y * scale, z: vector.z * scale }
+}
+
+function perpendicularInPlane(axis: Vec3): Vec3 {
+  const candidate = Math.abs(axis.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 }
+  const crossed = {
+    x: axis.y * candidate.z - axis.z * candidate.y,
+    y: axis.z * candidate.x - axis.x * candidate.z,
+    z: axis.x * candidate.y - axis.y * candidate.x,
+  }
+  return normalizeOrZero(crossed)
+}
+
+/**
+ * Build LineSegments endpoints for sky-plane proper-motion arrows on placed stars.
+ * Each arrow is a shaft plus a two-arm chevron head (three segments). Stars without
+ * both PM components or a display position are omitted.
+ */
+export function buildProperMotionArrows(
+  stars: readonly SelectedStar[],
+  scope: ProperMotionScope,
+  frame: ConstellationLocalFrame,
+): ProperMotionArrowGeometry {
+  const segmentStarts: Vec3[] = []
+  const segmentEnds: Vec3[] = []
+  const morphDirections: Vec3[] = []
+
+  for (const star of stars) {
+    if (scope === 'figure' && star.kind !== 'figure') continue
+    if (star.displayLocal === null) continue
+    if (star.pmRaMasYr === null || star.pmDecMasYr === null) continue
+
+    const equatorial = equatorialProperMotionVector(star.direction, star.pmRaMasYr, star.pmDecMasYr)
+    const localDir = normalizeOrZero(toLocalVector(equatorial, frame))
+    const totalMu = Math.hypot(star.pmRaMasYr, star.pmDecMasYr)
+    const length = properMotionArrowLength(totalMu)
+    if (!(length > 0) || (localDir.x === 0 && localDir.y === 0 && localDir.z === 0)) continue
+
+    const start = star.displayLocal
+    const end = addVec(start, scaleVec(localDir, length))
+    const headLen = length * PROPER_MOTION_HEAD_FRACTION
+    const side = perpendicularInPlane(localDir)
+    const back = scaleVec(localDir, -Math.cos(PROPER_MOTION_HEAD_HALF_ANGLE) * headLen)
+    const wing = scaleVec(side, Math.sin(PROPER_MOTION_HEAD_HALF_ANGLE) * headLen)
+    const headLeft = addVec(end, addVec(back, wing))
+    const headRight = addVec(end, addVec(back, scaleVec(wing, -1)))
+
+    segmentStarts.push(start, end, end)
+    segmentEnds.push(end, headLeft, headRight)
+    morphDirections.push(star.direction, star.direction, star.direction)
+  }
+
+  return { segmentStarts, segmentEnds, morphDirections }
 }
 
 /**

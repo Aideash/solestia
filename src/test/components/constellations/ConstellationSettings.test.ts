@@ -2,6 +2,7 @@ import { DOMWrapper, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CONSTELLATION_ATTRIBUTIONS } from '../../../data/constellations.ts'
 import type { ConstellationDragMode } from '../../../lib/constellations/constellationDragControls.ts'
+import type { ProperMotionScope } from '../../../lib/constellations/constellationSceneModel.ts'
 import ConstellationSettings from '../../../components/constellations/ConstellationSettings.vue'
 
 const mountedWrappers: VueWrapper[] = []
@@ -12,6 +13,8 @@ function mountSettings(
   depthMode: 'compressed' | 'true' = 'compressed',
   previewFigureLines = true,
   dragMode: ConstellationDragMode = 'normal',
+  showProperMotion = false,
+  properMotionScope: ProperMotionScope = 'figure',
 ) {
   const app = document.createElement('div')
   app.className = 'app'
@@ -20,7 +23,14 @@ function mountSettings(
 
   const wrapper = mount(ConstellationSettings, {
     attachTo: app,
-    props: { showStems, depthMode, previewFigureLines, dragMode },
+    props: {
+      showStems,
+      depthMode,
+      previewFigureLines,
+      dragMode,
+      showProperMotion,
+      properMotionScope,
+    },
   })
   mountedWrappers.push(wrapper)
   return wrapper
@@ -126,7 +136,30 @@ describe('ConstellationSettings', () => {
     expect(dialog.text()).toContain('Dragging moves the sky against your cursor')
   })
 
-  it('shows source links, licenses, revisions, and no velocity control', async () => {
+  it('emits proper-motion toggles and shows scope radios only when arrows are on', async () => {
+    const wrapper = mountSettings(false, 'compressed', true, 'normal', false, 'figure')
+    await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
+    let dialog = getDialog()
+
+    expect(dialog.find('input[data-settings-proper-motion-scope]').exists()).toBe(false)
+    const toggle = dialog.get('input[data-settings-proper-motion]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+
+    expect(wrapper.emitted('update:show-proper-motion')).toEqual([[true]])
+
+    await wrapper.setProps({ showProperMotion: true })
+    dialog = getDialog()
+    expect(dialog.text()).toContain('Proper motion arrows')
+    expect(dialog.text()).toContain('Figure stars')
+    expect(dialog.text()).toContain('All stars in view')
+
+    const allScope = dialog.get('input[data-settings-proper-motion-scope][value="all"]')
+    await allScope.setValue()
+    expect(wrapper.emitted('update:proper-motion-scope')).toEqual([['all']])
+  })
+
+  it('shows source links, licenses, revisions, and proper-motion controls without velocity wording', async () => {
     const wrapper = mountSettings()
     await wrapper.get('button[aria-haspopup="dialog"]').trigger('click')
     const dialog = getDialog()
@@ -143,6 +176,7 @@ describe('ConstellationSettings', () => {
       }
       if (attribution.revision) expect(dialog.text()).toContain(attribution.revision)
     }
+    expect(dialog.text()).toContain('Proper motion arrows')
     expect(dialog.text().toLowerCase()).not.toContain('velocity')
   })
 

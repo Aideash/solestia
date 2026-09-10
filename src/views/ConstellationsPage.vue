@@ -6,7 +6,10 @@ import ConstellationScene from '../components/constellations/ConstellationScene.
 import ConstellationSearch from '../components/constellations/ConstellationSearch.vue'
 import ConstellationSettings from '../components/constellations/ConstellationSettings.vue'
 import type { ConstellationDragMode } from '../lib/constellations/constellationDragControls.ts'
-import type { ConstellationScaleData } from '../lib/constellations/constellationSceneModel.ts'
+import type {
+  ConstellationScaleData,
+  ProperMotionScope,
+} from '../lib/constellations/constellationSceneModel.ts'
 import { constellationById, constellationSymbol } from '../data/constellations.ts'
 import type { ConstellationDepthMode } from '../lib/constellationGeometry.ts'
 
@@ -14,6 +17,8 @@ const route = useRoute()
 const router = useRouter()
 const sceneRef = ref<{ goToEarthPov: () => void } | null>(null)
 const showStems = ref(false)
+const showProperMotion = ref(false)
+const properMotionScope = ref<ProperMotionScope>('figure')
 const previewFigureLines = ref(true)
 const listPreviewId = ref<string | null>(null)
 const depthMode = ref<ConstellationDepthMode>('true')
@@ -97,6 +102,8 @@ function dismissInvalidMessage(): void {
           ref="sceneRef"
           :selected-id="selectedId"
           :show-stems="showStems"
+          :show-proper-motion="showProperMotion"
+          :proper-motion-scope="properMotionScope"
           :depth-mode="depthMode"
           :preview-figure-lines="previewFigureLines"
           :list-preview-id="listPreviewId"
@@ -131,6 +138,8 @@ function dismissInvalidMessage(): void {
         <div class="constellations-page__settings">
           <ConstellationSettings
             v-model:show-stems="showStems"
+            v-model:show-proper-motion="showProperMotion"
+            v-model:proper-motion-scope="properMotionScope"
             v-model:depth-mode="depthMode"
             v-model:preview-figure-lines="previewFigureLines"
             v-model:drag-mode="dragMode"

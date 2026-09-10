@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, useId, type CSSProperties } 
 import { CONSTELLATION_ATTRIBUTIONS } from '../../data/constellations.ts'
 import type { ConstellationDepthMode } from '../../lib/constellationGeometry.ts'
 import type { ConstellationDragMode } from '../../lib/constellations/constellationDragControls.ts'
+import type { ProperMotionScope } from '../../lib/constellations/constellationSceneModel.ts'
 import { placeSettingsPopup } from '../../lib/constellations/constellationSettingsPlacement.ts'
 
 defineProps<{
@@ -10,6 +11,8 @@ defineProps<{
   depthMode: ConstellationDepthMode
   previewFigureLines: boolean
   dragMode: ConstellationDragMode
+  showProperMotion: boolean
+  properMotionScope: ProperMotionScope
 }>()
 
 const emit = defineEmits<{
@@ -17,6 +20,8 @@ const emit = defineEmits<{
   'update:depth-mode': [value: ConstellationDepthMode]
   'update:preview-figure-lines': [value: boolean]
   'update:drag-mode': [value: ConstellationDragMode]
+  'update:show-proper-motion': [value: boolean]
+  'update:proper-motion-scope': [value: ProperMotionScope]
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -94,6 +99,14 @@ function emitStemChange(event: Event): void {
 
 function emitPreviewLinesChange(event: Event): void {
   emit('update:preview-figure-lines', (event.target as HTMLInputElement).checked)
+}
+
+function emitProperMotionChange(event: Event): void {
+  emit('update:show-proper-motion', (event.target as HTMLInputElement).checked)
+}
+
+function emitProperMotionScopeChange(event: Event): void {
+  emit('update:proper-motion-scope', (event.target as HTMLInputElement).value as ProperMotionScope)
 }
 
 function emitDepthChange(event: Event): void {
@@ -181,6 +194,51 @@ onBeforeUnmount(() => {
             <small>Connect placed objects to the reference plane.</small>
           </span>
         </label>
+
+        <label class="constellation-settings__check">
+          <input
+            type="checkbox"
+            data-settings-proper-motion
+            :checked="showProperMotion"
+            @change="emitProperMotionChange"
+          />
+          <span>
+            <strong>Proper motion arrows</strong>
+            <small>Show each star’s motion across the sky.</small>
+          </span>
+        </label>
+
+        <fieldset v-if="showProperMotion">
+          <legend>Arrow stars</legend>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-proper-motion-scope"
+              data-settings-proper-motion-scope
+              value="figure"
+              :checked="properMotionScope === 'figure'"
+              @change="emitProperMotionScopeChange"
+            />
+            <span>
+              <strong>Figure stars</strong>
+              <small>Only stick-figure members of the constellation.</small>
+            </span>
+          </label>
+          <label class="constellation-settings__choice">
+            <input
+              type="radio"
+              name="constellation-proper-motion-scope"
+              data-settings-proper-motion-scope
+              value="all"
+              :checked="properMotionScope === 'all'"
+              @change="emitProperMotionScopeChange"
+            />
+            <span>
+              <strong>All stars in view</strong>
+              <small>Figure stars plus nearby context stars.</small>
+            </span>
+          </label>
+        </fieldset>
 
         <fieldset>
           <legend>Mouse controls</legend>

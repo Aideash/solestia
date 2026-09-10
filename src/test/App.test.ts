@@ -13,6 +13,8 @@ vi.mock('../components/constellations/ConstellationScene.vue', () => ({
     props: {
       selectedId: { type: String, default: null },
       showStems: { type: Boolean, default: false },
+      showProperMotion: { type: Boolean, default: false },
+      properMotionScope: { type: String, default: 'figure' },
       depthMode: { type: String, default: 'compressed' },
     },
     emits: ['select', 'scale-change'],

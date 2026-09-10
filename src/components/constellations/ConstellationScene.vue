@@ -42,6 +42,7 @@ import {
   SLICE_GEOMETRY_COLOR,
   buildOverviewFigureEdges,
   buildOverviewStarField,
+  buildProperMotionArrows,
   buildSelectionModel,
   collectNameWorthyPicks,
   collectStemFootSpots,
@@ -50,6 +51,7 @@ import {
   type ConstellationSelectionModel,
   type NameWorthyPick,
   type OverviewStarField,
+  type ProperMotionScope,
 } from '../../lib/constellations/constellationSceneModel.ts'
 import {
   deselectMorphAmount,
@@ -64,6 +66,8 @@ const props = withDefaults(
   defineProps<{
     selectedId?: string | null
     showStems?: boolean
+    showProperMotion?: boolean
+    properMotionScope?: ProperMotionScope
     depthMode?: ConstellationDepthMode
     previewFigureLines?: boolean
     listPreviewId?: string | null
@@ -72,6 +76,8 @@ const props = withDefaults(
   {
     selectedId: null,
     showStems: false,
+    showProperMotion: false,
+    properMotionScope: 'figure',
     depthMode: 'compressed',
     previewFigureLines: true,
     listPreviewId: null,
@@ -586,6 +592,29 @@ function buildSelection(model: ConstellationSelectionModel): void {
       const spots = new Points(geometry, material)
       spots.name = 'stem-foot-spots'
       group.add(spots)
+    }
+  }
+
+  if (props.showProperMotion) {
+    const arrows = buildProperMotionArrows(model.stars, props.properMotionScope, model.frame)
+    if (arrows.segmentStarts.length > 0) {
+      const geometry = new BufferGeometry()
+      const starts: Vector3[] = []
+      const ends: Vector3[] = []
+      for (let index = 0; index < arrows.segmentStarts.length; index += 1) {
+        const origin = overviewStartVector(arrows.morphDirections[index])
+        starts.push(origin, origin)
+        ends.push(slicePoint(arrows.segmentStarts[index]), slicePoint(arrows.segmentEnds[index]))
+      }
+      registerMorphable(geometry, starts, ends)
+      const material = new LineBasicMaterial({
+        color: new Color(FOCUS_GOLD_COLOR),
+        transparent: true,
+        opacity: 0.7,
+      })
+      const lines = new LineSegments(geometry, material)
+      lines.name = 'proper-motion'
+      group.add(lines)
     }
   }
 
@@ -1239,6 +1268,8 @@ function requestSelectionRebuild(): void {
 watch(() => props.depthMode, requestSelectionRebuild)
 
 watch(() => props.showStems, requestSelectionRebuild)
+
+watch(() => [props.showProperMotion, props.properMotionScope] as const, requestSelectionRebuild)
 
 watch(
   () => props.dragMode,
