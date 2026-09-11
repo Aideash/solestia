@@ -124,7 +124,7 @@ function setViewed(at: Date) {
         <MonthCalendar :at="viewed" :driver="calendar" :time-zone="siteId" @change="setViewed" />
       </section>
     </div>
-    <RouterLink class="back" :to="{ name: 'solar' }">← Solar system</RouterLink>
+    <RouterLink class="nav-pill" :to="{ name: 'solar' }">← Solar system</RouterLink>
   </div>
 </template>
 
@@ -133,11 +133,6 @@ function setViewed(at: Date) {
 
 $page-wide: 56rem;
 $page-medium: 36rem;
-
-.page {
-  display: grid;
-  gap: $spacing-lg;
-}
 
 .studio {
   display: grid;
@@ -256,23 +251,6 @@ $page-medium: 36rem;
 
 .calendar-picker__select:focus-visible {
   border-color: var(--accent);
-  outline: none;
-}
-
-.back {
-  display: block;
-  color: var(--accent);
-  font-size: 0.75rem;
-  text-decoration: none;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  width: fit-content;
-  border-radius: 10px;
-}
-
-.back:hover,
-.back:focus-visible {
-  color: var(--text);
   outline: none;
 }
 

@@ -183,7 +183,7 @@ const envelopeDeg = ((LUNAR_LONGITUDE_ENVELOPE_RAD * 180) / Math.PI).toFixed(1)
         </p>
       </div>
     </section>
-    <RouterLink class="back" :to="{ name: 'earth-system' }">← Earth</RouterLink>
+    <RouterLink class="nav-pill" :to="{ name: 'earth-system' }">← Earth</RouterLink>
   </div>
 </template>
 
@@ -192,11 +192,6 @@ const envelopeDeg = ((LUNAR_LONGITUDE_ENVELOPE_RAD * 180) / Math.PI).toFixed(1)
 
 $page-wide: 56rem;
 $page-medium: 36rem;
-
-.page {
-  display: grid;
-  gap: $spacing-lg;
-}
 
 .studio {
   display: grid;
@@ -284,23 +279,6 @@ $page-medium: 36rem;
 
 .help p + p {
   margin-top: $spacing-sm;
-}
-
-.back {
-  display: block;
-  color: var(--accent);
-  font-size: 0.75rem;
-  text-decoration: none;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  width: fit-content;
-  border-radius: 10px;
-}
-
-.back:hover,
-.back:focus-visible {
-  color: var(--text);
-  outline: none;
 }
 
 @media (min-width: $page-medium) {

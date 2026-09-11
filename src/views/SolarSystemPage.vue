@@ -83,7 +83,7 @@ function openSystem(id: string) {
     <template #controls>
       <RouterLink
         v-if="selectedTimePage"
-        class="forward"
+        class="nav-pill"
         :to="{ name: selectedTimePage.routeName }"
       >
         Date and time →
@@ -121,54 +121,3 @@ function openSystem(id: string) {
     </template>
   </SystemStage>
 </template>
-
-<style scoped lang="scss">
-@use '../styles/variables' as *;
-
-.frame-toggle {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  margin-top: $spacing-xs;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: $color-text-muted;
-  font: inherit;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.frame-toggle:hover,
-.frame-toggle:focus-visible {
-  color: var(--text);
-  outline: none;
-}
-
-.frame-toggle__label {
-  letter-spacing: 0.02em;
-}
-
-.frame-toggle__mode {
-  font-family: $font-mono;
-  font-size: 0.8125rem;
-}
-
-.forward {
-  display: block;
-  margin-top: 0.5rem;
-  color: var(--accent);
-  font-size: 0.75rem;
-  text-decoration: none;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  width: fit-content;
-  border-radius: 10px;
-}
-
-.forward:hover,
-.forward:focus-visible {
-  color: var(--text);
-  outline: none;
-}
-</style>

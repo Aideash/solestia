@@ -433,12 +433,6 @@ tbody tr:last-child {
   }
 }
 
-thead th {
-  color: $color-text-muted;
-  font-weight: 500;
-  font-size: 0.75rem;
-}
-
 /* A heading that switches units, supplied through a `head-<id>` slot. */
 thead th :deep(.th-toggle) {
   display: flex;

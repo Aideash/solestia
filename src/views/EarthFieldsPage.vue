@@ -439,17 +439,12 @@ function seekEpoch(at: Date) {
         </p>
       </div>
     </section>
-    <RouterLink class="back" :to="{ name: 'earth-system' }">← Earth</RouterLink>
+    <RouterLink class="nav-pill" :to="{ name: 'earth-system' }">← Earth</RouterLink>
   </div>
 </template>
 
 <style scoped lang="scss">
 @use '../styles/variables' as *;
-
-.page {
-  display: grid;
-  gap: $spacing-lg;
-}
 
 .studio__stage {
   position: relative;
@@ -554,22 +549,5 @@ function seekEpoch(at: Date) {
   color: $color-text-muted;
   font-size: 0.75rem;
   line-height: 1.45;
-}
-
-.back {
-  display: block;
-  color: var(--accent);
-  font-size: 0.75rem;
-  text-decoration: none;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
-  width: fit-content;
-  border-radius: 10px;
-}
-
-.back:hover,
-.back:focus-visible {
-  color: var(--text);
-  outline: none;
 }
 </style>

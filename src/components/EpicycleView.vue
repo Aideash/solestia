@@ -840,10 +840,6 @@ function formatRadius(radius: number): string {
   font-weight: 400;
 }
 
-.comparison thead th {
-  color: $color-text-muted;
-}
-
 .comparison th:first-child {
   position: sticky;
   left: 0;

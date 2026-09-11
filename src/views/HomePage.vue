@@ -153,9 +153,6 @@ onUnmounted(() => {
           <circle cx="50" :cy="crescentShadowCy" :r="PLANET_R" fill="black" />
         </mask>
         <linearGradient id="home-crescent-lit" x1="0%" y1="0%" x2="0%" y2="100%">
-          <!-- <stop offset="0%" stop-color="#f7ecd0" />
-          <stop offset="10%" stop-color="#c4a878" />
-          <stop offset="30%" stop-color="#6a5840" /> -->
           <stop data-v-9b48b94e="" offset="0%" stop-color="#f7ecd0" style="stop-color: #bad2fa" />
           <stop data-v-9b48b94e="" offset="10%" stop-color="#c4a878" style="stop-color: #499eff" />
           <stop data-v-9b48b94e="" offset="30%" stop-color="#6a5840" style="stop-color: #0077ff" />
