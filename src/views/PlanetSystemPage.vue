@@ -46,7 +46,7 @@ function cyclePlanetViewPlane() {
 
 function toggleSatellite(id: string) {
   if (id === 'sun') {
-    router.push('/')
+    router.push({ name: 'solar' })
   }
   selectedSatellite.value = selectedSatellite.value === id ? null : id
 }
@@ -99,7 +99,7 @@ function toggleSatellite(id: string) {
         <span class="frame-toggle__label">plane</span>
         <span class="frame-toggle__mode">{{ viewPlane }}</span>
       </button>
-      <RouterLink class="back" to="/">← Solar system</RouterLink>
+      <RouterLink class="back" :to="{ name: 'solar' }">← Solar system</RouterLink>
     </template>
     <template #outer>
       <PlanetClock

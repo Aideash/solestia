@@ -19,7 +19,7 @@ export type PlanetSystem = {
   name: string
   symbol: string
   routeName: `${PlanetSystemId}-system`
-  path: `/${PlanetSystemId}`
+  path: `/orrery/${PlanetSystemId}`
   radiusKm: number
   radiusSymbol: string
   satelliteIds: readonly SatelliteId[]
@@ -38,7 +38,7 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     name: 'Earth',
     symbol: '♁',
     routeName: 'earth-system',
-    path: '/earth',
+    path: '/orrery/earth',
     radiusKm: 6378.137,
     radiusSymbol: 'R_E',
     satelliteIds: ['moon'],
@@ -54,7 +54,7 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     name: 'Jupiter',
     symbol: '♃',
     routeName: 'jupiter-system',
-    path: '/jupiter',
+    path: '/orrery/jupiter',
     radiusKm: 71492,
     radiusSymbol: 'R_J',
     satelliteIds: ['io', 'europa', 'ganymede', 'callisto'],
@@ -70,7 +70,7 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     name: 'Saturn',
     symbol: '♄',
     routeName: 'saturn-system',
-    path: '/saturn',
+    path: '/orrery/saturn',
     radiusKm: 60268,
     radiusSymbol: 'R_S',
     satelliteIds: ['mimas', 'enceladus', 'tethys', 'dione', 'rhea', 'titan', 'iapetus'],
@@ -86,7 +86,7 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     name: 'Uranus',
     symbol: '♅',
     routeName: 'uranus-system',
-    path: '/uranus',
+    path: '/orrery/uranus',
     radiusKm: 25559,
     radiusSymbol: 'R_U',
     satelliteIds: ['miranda', 'ariel', 'umbriel', 'titania', 'oberon'],
@@ -102,7 +102,7 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     name: 'Neptune',
     symbol: '♆',
     routeName: 'neptune-system',
-    path: '/neptune',
+    path: '/orrery/neptune',
     radiusKm: 24764,
     radiusSymbol: 'R_N',
     satelliteIds: ['proteus', 'triton', 'nereid'],

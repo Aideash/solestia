@@ -29,7 +29,13 @@ async function mountApp(path: string): Promise<{ wrapper: VueWrapper; router: Ro
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', name: 'solar', component: Page },
+      {
+        path: '/',
+        name: 'home',
+        component: Page,
+        meta: { timeless: true, immersive: true },
+      },
+      { path: '/orrery', name: 'solar', component: Page },
       {
         path: '/constellations',
         name: 'constellations',
@@ -63,7 +69,13 @@ async function mountShellWithPage(path: string): Promise<{ wrapper: VueWrapper; 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', name: 'solar', component: Page },
+      {
+        path: '/',
+        name: 'home',
+        component: Page,
+        meta: { timeless: true, immersive: true },
+      },
+      { path: '/orrery', name: 'solar', component: Page },
       {
         path: '/constellations',
         name: 'constellations',
@@ -80,7 +92,7 @@ async function mountShellWithPage(path: string): Promise<{ wrapper: VueWrapper; 
   })
   // Mount on a non-constellation route first so App's `.app` root is in the
   // document before ConstellationSettings resolves `Teleport to=".app"`.
-  await router.push('/')
+  await router.push('/orrery')
   await router.isReady()
   const wrapper = mount(App, {
     attachTo: document.body,
@@ -101,7 +113,7 @@ afterEach(() => {
 
 describe('App constellation shell', () => {
   it('hides epoch controls and relaxes the shell only for timeless immersive routes', async () => {
-    const { wrapper, router } = await mountApp('/')
+    const { wrapper, router } = await mountApp('/orrery')
 
     expect(wrapper.find('[data-testid="epoch-field"]').exists()).toBe(true)
     expect(wrapper.get('.app').classes()).not.toContain('app--immersive')
@@ -113,6 +125,20 @@ describe('App constellation shell', () => {
     expect(wrapper.get('.app').classes()).toContain('app--immersive')
   })
 
+  it('hides the app header on home for full immersion', async () => {
+    const { wrapper, router } = await mountApp('/')
+
+    expect(wrapper.find('[data-testid="epoch-field"]').exists()).toBe(false)
+    expect(wrapper.get('.app').classes()).toContain('app--immersive')
+    expect(wrapper.get('.app').classes()).toContain('app--home')
+    expect(wrapper.get('header').isVisible()).toBe(false)
+
+    await router.push('/orrery')
+    await flushPromises()
+
+    expect(wrapper.get('header').isVisible()).toBe(true)
+    expect(wrapper.get('.app__title').attributes('href')).toBe('/')
+  })
   it('handles global Escape from constellation detail before generic detail navigation', async () => {
     const { router } = await mountApp('/constellation/orion')
 

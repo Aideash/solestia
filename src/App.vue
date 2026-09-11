@@ -22,7 +22,8 @@ const subtitle = computed(() =>
 )
 const isTimeless = computed(() => route.meta.timeless === true)
 const isImmersive = computed(() => route.meta.immersive === true)
-const isDetailView = computed(() => route.name !== 'solar')
+const hideHeader = computed(() => route.name === 'home')
+const isDetailView = computed(() => route.name !== 'solar' && route.name !== 'home')
 const epochRange = computed(() => {
   if (route.name === 'earth-fields') return solarWindBounds()
   return { fromMs: ELEMENTS_VALID_FROM_MS, toMs: ELEMENTS_VALID_TO_MS }
@@ -140,8 +141,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app" :class="{ 'app--immersive': isImmersive }">
-    <header>
+  <div class="app" :class="{ 'app--immersive': isImmersive, 'app--home': hideHeader }">
+    <header v-show="!hideHeader">
       <div class="app__header">
         <h1>
           <RouterLink class="app__title" to="/">Solestia</RouterLink>
@@ -179,6 +180,10 @@ $center-width: 32rem;
   padding: max(#{$spacing-sm}, env(safe-area-inset-top))
     max(#{$spacing-sm}, env(safe-area-inset-right)) max(#{$spacing-sm}, env(safe-area-inset-bottom))
     max(#{$spacing-sm}, env(safe-area-inset-left));
+}
+
+.app--home {
+  padding: 0;
 }
 
 header {
