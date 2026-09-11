@@ -20,7 +20,10 @@ const router = useRouter()
 const subtitle = computed(() =>
   typeof route.meta.subtitle === 'string' ? route.meta.subtitle : null,
 )
-const isDetailView = computed(() => route.name !== 'solar')
+const isTimeless = computed(() => route.meta.timeless === true)
+const isImmersive = computed(() => route.meta.immersive === true)
+const hideHeader = computed(() => route.name === 'home')
+const isDetailView = computed(() => route.name !== 'solar' && route.name !== 'home')
 const epochRange = computed(() => {
   if (route.name === 'earth-fields') return solarWindBounds()
   return { fromMs: ELEMENTS_VALID_FROM_MS, toMs: ELEMENTS_VALID_TO_MS }
@@ -95,6 +98,11 @@ function onAppKeydown(event: KeyboardEvent) {
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
     return
   }
+  if (route.name === 'constellation') {
+    void router.push({ name: 'constellations' })
+    event.preventDefault()
+    return
+  }
   if (selectedId.value) {
     selectedId.value = null
     event.preventDefault()
@@ -133,14 +141,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="app">
-    <header>
+  <div class="app" :class="{ 'app--immersive': isImmersive, 'app--home': hideHeader }">
+    <header v-show="!hideHeader">
       <div class="app__header">
         <h1>
           <RouterLink class="app__title" to="/">Solestia</RouterLink>
           <span v-if="subtitle" class="app__subtitle">{{ subtitle }}</span>
         </h1>
         <EpochField
+          v-if="!isTimeless"
           :at="viewed"
           :live="live"
           :from-ms="epochRange.fromMs"
@@ -164,6 +173,17 @@ $center-width: 32rem;
   margin: 0 auto;
   padding: $spacing-md $spacing-md 2.5rem;
   min-height: 100vh;
+}
+
+.app--immersive {
+  max-width: none;
+  padding: max(#{$spacing-sm}, env(safe-area-inset-top))
+    max(#{$spacing-sm}, env(safe-area-inset-right)) max(#{$spacing-sm}, env(safe-area-inset-bottom))
+    max(#{$spacing-sm}, env(safe-area-inset-left));
+}
+
+.app--home {
+  padding: 0;
 }
 
 header {

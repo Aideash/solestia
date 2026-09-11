@@ -40,7 +40,7 @@ if (!epoch) throw new Error('Epoch context is missing')
       </p>
     </aside>
 
-    <RouterLink class="back" :to="{ name: 'earth-system' }">← Earth system</RouterLink>
+    <RouterLink class="nav-pill" :to="{ name: 'earth-system' }">← Earth system</RouterLink>
   </main>
 </template>
 
@@ -58,10 +58,6 @@ if (!epoch) throw new Error('Epoch context is missing')
   margin-left: auto;
 }
 
-.introduction {
-  margin-bottom: $spacing-lg;
-}
-
 .introduction p,
 .method p {
   color: $color-text-muted;
@@ -74,7 +70,6 @@ if (!epoch) throw new Error('Epoch context is missing')
 }
 
 .method {
-  margin-top: $spacing-xl;
   padding-top: $spacing-md;
   border-top: 1px solid $color-border;
 }
@@ -89,18 +84,7 @@ if (!epoch) throw new Error('Epoch context is missing')
   margin: 0 0 $spacing-sm;
 }
 
-.back {
-  display: block;
-  width: fit-content;
+.nav-pill {
   margin: $spacing-xl auto 0;
-  color: $color-text-muted;
-  font-size: 0.75rem;
-  text-decoration: none;
-}
-
-.back:hover,
-.back:focus-visible {
-  color: $color-text;
-  outline: none;
 }
 </style>
