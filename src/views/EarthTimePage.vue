@@ -2,11 +2,13 @@
 import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
+import EarthLocalClock from '../components/EarthLocalClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
 import { epochKey, SI_SECOND_CADENCE } from '../epoch.ts'
 import { calendarDrivers } from '../lib/calendars.ts'
 import { clockDrivers } from '../lib/clocks.ts'
+import { earthLocalSkyAt } from '../lib/earthLocalSky.ts'
 import { clampEpoch, planetSystemAt } from '../lib/kepler.ts'
 import { groupedTimeZones, hostTimeZoneId, isTimeZoneId, timeZoneLabel } from '../lib/timeZones.ts'
 
@@ -19,6 +21,97 @@ const snapshot = computed(() => planetSystemAt(viewed.value, 'earth'))
 const earth = computed(() => snapshot.value.parent)
 const NAMES_STORAGE_KEY = 'solestia.calendarNames'
 const ZONE_STORAGE_KEY = 'solestia.earthTimeZone'
+
+type DialMode = 'prime' | 'local'
+const dialMode = ref<DialMode>('prime')
+const latitudeDeg = ref<number | null>(null)
+const longitudeEastDeg = ref<number | null>(null)
+const locationStatus = ref<'idle' | 'pending' | 'ready' | 'denied'>('idle')
+const latitudeInput = ref('')
+const longitudeInput = ref('')
+/** Once the user types coords, geolocation must not clobber them. */
+const locationTouched = ref(false)
+
+const hasLocation = computed(
+  () =>
+    latitudeDeg.value !== null &&
+    longitudeEastDeg.value !== null &&
+    Number.isFinite(latitudeDeg.value) &&
+    Number.isFinite(longitudeEastDeg.value),
+)
+
+const localSky = computed(() => {
+  if (!hasLocation.value) return null
+  return earthLocalSkyAt(viewed.value, latitudeDeg.value!, longitudeEastDeg.value!, snapshot.value)
+})
+
+function applyCoordinates(lat: number, lon: number) {
+  latitudeDeg.value = lat
+  longitudeEastDeg.value = lon
+  latitudeInput.value = formatCoord(lat)
+  longitudeInput.value = formatCoord(lon)
+  locationStatus.value = 'ready'
+}
+
+function formatCoord(value: number): string {
+  return String(Number(value.toFixed(4)))
+}
+
+function parseCoord(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  const value = Number(trimmed)
+  return Number.isFinite(value) ? value : null
+}
+
+function onLatitudeInput(event: Event) {
+  const raw = (event.target as HTMLInputElement).value
+  latitudeInput.value = raw
+  locationTouched.value = true
+  const value = parseCoord(raw)
+  if (value === null || value < -90 || value > 90) return
+  latitudeDeg.value = value
+  if (longitudeEastDeg.value !== null) locationStatus.value = 'ready'
+}
+
+function onLongitudeInput(event: Event) {
+  const raw = (event.target as HTMLInputElement).value
+  longitudeInput.value = raw
+  locationTouched.value = true
+  const value = parseCoord(raw)
+  if (value === null || value < -180 || value > 180) return
+  longitudeEastDeg.value = value
+  if (latitudeDeg.value !== null) locationStatus.value = 'ready'
+}
+
+function requestGeolocation() {
+  if (!navigator.geolocation) {
+    locationStatus.value = hasLocation.value ? 'ready' : 'denied'
+    return
+  }
+  if (locationTouched.value && hasLocation.value) {
+    locationStatus.value = 'ready'
+    return
+  }
+  locationStatus.value = 'pending'
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      if (locationTouched.value) {
+        locationStatus.value = hasLocation.value ? 'ready' : 'denied'
+        return
+      }
+      applyCoordinates(position.coords.latitude, position.coords.longitude)
+    },
+    () => {
+      locationStatus.value = hasLocation.value ? 'ready' : 'denied'
+    },
+    { enableHighAccuracy: false, maximumAge: 60_000, timeout: 10_000 },
+  )
+}
+
+watch(dialMode, (mode) => {
+  if (mode === 'local') requestGeolocation()
+})
 
 type NamesMode = 'auto' | 'native'
 
@@ -107,7 +200,31 @@ function setViewed(at: Date) {
   <div class="page">
     <div class="studio">
       <section class="studio__center" aria-label="Planet clock">
-        <PlanetClock :planet="earth" />
+        <PlanetClock v-if="dialMode === 'prime'" :planet="earth" />
+        <EarthLocalClock v-else-if="localSky" :sky="localSky" />
+        <div v-else class="studio__local-placeholder" role="status">
+          <p v-if="locationStatus === 'pending'">Waiting for location…</p>
+          <p v-else>Enter latitude and longitude</p>
+        </div>
+        <div class="studio__dial-toggle" role="group" aria-label="Planet clock mode">
+          <button
+            type="button"
+            class="names-toggle"
+            :aria-pressed="dialMode === 'prime'"
+            @click="dialMode = 'prime'"
+          >
+            <span class="names-toggle__label">Dial</span>
+            <span class="names-toggle__mode">Prime</span>
+          </button>
+          <button
+            type="button"
+            class="names-toggle"
+            :aria-pressed="dialMode === 'local'"
+            @click="dialMode = 'local'"
+          >
+            <span class="names-toggle__mode">Local</span>
+          </button>
+        </div>
         <label class="calendar-picker studio__zone">
           <span class="calendar-picker__label">Zone</span>
           <select v-model="timeZoneId" class="calendar-picker__select studio__zone-select">
@@ -118,6 +235,30 @@ function setViewed(at: Date) {
             </optgroup>
           </select>
         </label>
+        <div v-if="dialMode === 'local'" class="studio__location">
+          <label class="calendar-picker">
+            <span class="calendar-picker__label">Lat</span>
+            <input
+              class="calendar-picker__select studio__coord"
+              type="text"
+              inputmode="decimal"
+              :value="latitudeInput"
+              aria-label="Latitude degrees"
+              @input="onLatitudeInput"
+            />
+          </label>
+          <label class="calendar-picker">
+            <span class="calendar-picker__label">Lon</span>
+            <input
+              class="calendar-picker__select studio__coord"
+              type="text"
+              inputmode="decimal"
+              :value="longitudeInput"
+              aria-label="Longitude east degrees"
+              @input="onLongitudeInput"
+            />
+          </label>
+        </div>
       </section>
       <section class="studio__time" aria-label="Time">
         <div class="studio__time-header">
@@ -230,6 +371,43 @@ $page-medium: 36rem;
   filter: none;
 }
 
+.studio__dial-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: $spacing-sm;
+}
+
+.studio__local-placeholder {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  width: 100%;
+  color: $color-text-muted;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.studio__local-placeholder p {
+  margin: 0;
+  max-width: 10rem;
+}
+
+.studio__location {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: $spacing-sm;
+  justify-self: stretch;
+}
+
+.studio__coord {
+  width: 5.5rem;
+  max-width: none;
+  appearance: textfield;
+}
+
 /* Labels stay on a shared top line; the dials center in the space below them. */
 .studio__time,
 .studio__date {
@@ -255,6 +433,7 @@ $page-medium: 36rem;
 .studio__date :deep(.calendar) {
   --calendar-scale: 0.6;
 
+  margin: $spacing-md auto;
   align-self: center;
 }
 
