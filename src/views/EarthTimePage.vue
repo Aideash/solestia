@@ -2,7 +2,7 @@
 import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
-import EarthLocalClock from '../components/EarthLocalClock.vue'
+import EarthLocalClock from '../components/clocks/EarthLocalClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
 import { epochKey, SI_SECOND_CADENCE } from '../epoch.ts'

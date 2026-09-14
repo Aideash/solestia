@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { EarthLocalSky } from '../lib/earthLocalSky.ts'
+import type { EarthLocalSky } from '../../lib/earthLocalSky.ts'
 
 const props = defineProps<{
   sky: EarthLocalSky

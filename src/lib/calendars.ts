@@ -6,6 +6,7 @@ import {
 } from 'metric-calendar'
 import { Temporal } from 'temporal-polyfill/full'
 import { ELEMENTS_VALID_FROM_MS, ELEMENTS_VALID_TO_MS } from '../data/planets.ts'
+import { mayanCalendarDrivers } from './mayanCalendars.ts'
 import { hostTimeZoneId } from './timeZones.ts'
 
 export type CalendarDateParts = {
@@ -35,6 +36,8 @@ export type MonthGrid = {
   headingPrimary: string
   headingSecondary?: string
   headingTitle?: string
+  /** When false, the calendar toolbar hides year chevrons. Defaults to true. */
+  yearNav?: boolean
   columnCount: number
   weekdayLabels: readonly CalendarColumnLabel[]
   cells: CalendarCell[]
@@ -740,6 +743,7 @@ export const calendarDrivers = [
   makeCalendarDriver('hebrew', 'Hebrew', 'he'),
   makeFrenchRepublicanDriver(),
   makeMetricCalendarDriver(),
+  ...mayanCalendarDrivers,
 ] as const
 
 export const gregorianCalendar = calendarDrivers[0]

@@ -127,6 +127,38 @@ assertSelectedCellRoundTrip(gregory, lateUtc, 'America/New_York')
 assertSelectedCellRoundTrip(french, lateUtc, 'Pacific/Auckland')
 assertSelectedCellRoundTrip(metric, lateUtc, 'Pacific/Auckland')
 
+const mayanRound = driver('mayan-calendar-round')
+const mayanLong = driver('mayan-long-count')
+const mayanAt = localDate(2012, 12, 21)
+
+assert.equal(mayanLong.dateParts(mayanAt).key, 'mayan-lc-13.0.0.0.0')
+assert.equal(mayanLong.label(mayanAt), '13.0.0.0.0')
+assert.equal(mayanRound.label(mayanAt), '4 Ajaw 3 Kʼankʼin')
+
+const mayanRoundGrid = mayanRound.monthGrid(mayanAt)
+assert.ok(mayanRoundGrid)
+assert.equal(mayanRoundGrid.yearNav, false)
+assert.equal(mayanRoundGrid.headingPrimary, 'Kʼankʼin')
+assert.equal(mayanRoundGrid.cells.length, 20)
+assert.equal(mayanRoundGrid.columnCount, 5)
+assert.equal(mayanRoundGrid.cells.find((cell) => cell.key === mayanRound.dateParts(mayanAt).key)?.label, '4 Ajaw')
+
+const mayanLongGrid = mayanLong.monthGrid(mayanAt)
+assert.ok(mayanLongGrid)
+assert.equal(mayanLongGrid.headingPrimary, 'Winal 0')
+assert.equal(mayanLongGrid.headingSecondary, '13.0.0')
+assert.equal(mayanLong.dateParts(mayanLong.shiftYear(mayanAt, 1)).key, 'mayan-lc-13.0.1.0.0')
+
+assert.equal(mayanRound.shiftYear(mayanAt, 1).getTime(), mayanAt.getTime())
+
+for (const calendar of [mayanRound, mayanLong]) {
+  for (const at of [mayanAt, localDate(2026, 3, 20), lateUtc]) {
+    assertSelectedCellRoundTrip(calendar, at, 'UTC')
+    assertSelectedCellRoundTrip(calendar, calendar.shiftMonth(at, 1, 'UTC'), 'UTC')
+    assertSelectedCellRoundTrip(calendar, calendar.shiftMonth(at, -1, 'UTC'), 'UTC')
+  }
+}
+
 const aucklandShift = gregory.shiftMonth(lateUtc, 1, 'Pacific/Auckland')
 assert.equal(gregory.dateParts(aucklandShift, 'Pacific/Auckland').month, 4)
 assert.equal(gregory.dateParts(aucklandShift, 'Pacific/Auckland').day, 21)

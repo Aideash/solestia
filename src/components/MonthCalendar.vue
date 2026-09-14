@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { CalendarDriver } from '../lib/calendars.ts'
+import { MAYAN_NATIVE_LOCALE } from '../lib/mayanCalendars.ts'
 
 const props = defineProps<{
   at: Date
@@ -15,6 +16,11 @@ const emit = defineEmits<{
 
 const grid = computed(() => props.driver.monthGrid(props.at, props.locale, props.timeZone))
 const parts = computed(() => props.driver.dateParts(props.at, props.timeZone))
+const mayanNumerals = computed(
+  () =>
+    props.locale === MAYAN_NATIVE_LOCALE ||
+    Boolean(props.locale?.startsWith(`${MAYAN_NATIVE_LOCALE}-`)),
+)
 
 function isSelected(key: string): boolean {
   return parts.value.key === key
@@ -35,9 +41,18 @@ function stepYear(delta: number) {
 </script>
 
 <template>
-  <div v-if="grid" class="calendar">
-    <div class="calendar__toolbar">
-      <button type="button" class="calendar__nav" aria-label="Previous year" @click="stepYear(-1)">
+  <div v-if="grid" class="calendar" :class="{ 'calendar--mayan-numerals': mayanNumerals }">
+    <div
+      class="calendar__toolbar"
+      :class="{ 'calendar__toolbar--no-year': grid.yearNav === false }"
+    >
+      <button
+        v-if="grid.yearNav !== false"
+        type="button"
+        class="calendar__nav"
+        aria-label="Previous year"
+        @click="stepYear(-1)"
+      >
         «
       </button>
       <button
@@ -62,7 +77,13 @@ function stepYear(delta: number) {
       <button type="button" class="calendar__nav" aria-label="Next month" @click="stepMonth(1)">
         ›
       </button>
-      <button type="button" class="calendar__nav" aria-label="Next year" @click="stepYear(1)">
+      <button
+        v-if="grid.yearNav !== false"
+        type="button"
+        class="calendar__nav"
+        aria-label="Next year"
+        @click="stepYear(1)"
+      >
         »
       </button>
     </div>
@@ -135,6 +156,10 @@ function stepYear(delta: number) {
   padding-bottom: $spacing-xs;
   border-bottom: 1px solid var(--border-strong);
   border-radius: $radius-sm;
+}
+
+.calendar__toolbar--no-year {
+  grid-template-columns: auto 1fr auto;
 }
 
 .calendar__heading {
@@ -221,6 +246,17 @@ function stepYear(delta: number) {
   padding-inline: 0.15rem;
   font-size: 0.68rem;
   overflow-wrap: anywhere;
+}
+
+.calendar--mayan-numerals .calendar__heading,
+.calendar--mayan-numerals .calendar__day {
+  font-family: var(--mayan-numerals), $font-sans;
+}
+
+.calendar--mayan-numerals .calendar__day--named {
+  min-height: 1.85rem;
+  font-size: 0.85rem;
+  overflow-wrap: normal;
 }
 
 .calendar__day:hover,
