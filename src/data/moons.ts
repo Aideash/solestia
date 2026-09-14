@@ -2,11 +2,12 @@
  * Natural satellites: mean elements at 2000-01-01.5 TDB from JPL SSD
  * Planetary Satellite Mean Elements (DE405/LE405 for the Moon, JUP365 for the
  * Galileans, SAT441 local-Laplace-plane elements for Saturn's seven moons over
- * 160 km in radius, URA182 equatorial elements for the five major Uranian
- * moons, and NEP081 local-Laplace-plane elements for Proteus and Nereid;
- * Triton is the one exception, taken from the NEP097 row).
- * The Moon is referred to the J2000 ecliptic; the Galileans use their local
- * Laplace planes; the Uranian majors use Uranus's equator.
+ * 160 km in radius, MAR099 Laplace-plane elements for Phobos and Deimos,
+ * URA182 equatorial elements for the five major Uranian moons, and NEP081
+ * local-Laplace-plane elements for Proteus and Nereid; Triton is the one
+ * exception, taken from the NEP097 row).
+ * The Moon is referred to the J2000 ecliptic; the Galileans and Martian moons
+ * use their local Laplace planes; the Uranian majors use Uranus's equator.
  * https://ssd.jpl.nasa.gov/sats/elem/sep.html
  *
  * Unlike the planet table, these are epoch elements plus periapsis/node
@@ -25,6 +26,8 @@ import { omegaFromWDot, type BodyFrames } from './planets.ts'
 
 export type SatelliteId =
   | 'moon'
+  | 'phobos'
+  | 'deimos'
   | 'io'
   | 'europa'
   | 'ganymede'
@@ -141,6 +144,73 @@ export const MOONS: Satellite[] = [
       // Its north pole in ICRF coordinates supplies that plane to the shared transform.
       laplaceRa: 270,
       laplaceDec: 66.56072,
+    },
+  },
+  {
+    id: 'phobos',
+    name: 'Phobos',
+    color: '#c4a882',
+    symbol: 'I',
+    parent: 'mars',
+    // IAU WGCCRE / Archinal et al.; synchronous lock matched via periodIsSidereal.
+    rotation: { r: omegaFromWDot(1128.844585), theta: 26.69945076947391, phi: 352.9229488651205 },
+    iau: {
+      ra0: 317.67,
+      raDot: -0.108,
+      dec0: 52.905,
+      decDot: -0.061,
+      w0: 35.06,
+      wDot: 1128.844585,
+    },
+    elements: {
+      // MAR099 mean elements at 2000-01-01.5 TDB.
+      aKm: 9375,
+      e: 0.015,
+      omega0: 216.3,
+      M0: 189.7,
+      i0: 1.1,
+      Omega0: 169.2,
+      // Match the IAU sidereal spin used by the orientation model.
+      periodDays: 360 / 1128.844585,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 1.1,
+      nodePeriodYears: 2.3,
+      apsisDirection: -1,
+      nodeDirection: -1,
+      laplaceRa: 317.7,
+      laplaceDec: 52.9,
+    },
+  },
+  {
+    id: 'deimos',
+    name: 'Deimos',
+    color: '#9a9088',
+    symbol: 'II',
+    parent: 'mars',
+    rotation: { r: omegaFromWDot(285.161897), theta: 25.834355492319922, phi: 352.8009501569794 },
+    iau: {
+      ra0: 316.65,
+      raDot: -0.108,
+      dec0: 53.52,
+      decDot: -0.061,
+      w0: 79.41,
+      wDot: 285.161897,
+    },
+    elements: {
+      aKm: 23457,
+      e: 0.0001,
+      omega0: 0,
+      M0: 205,
+      i0: 1.8,
+      Omega0: 54.3,
+      periodDays: 360 / 285.161897,
+      periodIsSidereal: true,
+      periapsisPeriodYears: 0,
+      nodePeriodYears: 56.2,
+      apsisDirection: -1,
+      nodeDirection: -1,
+      laplaceRa: 316.6,
+      laplaceDec: 53.5,
     },
   },
   {

@@ -49,7 +49,9 @@ function openSystem(id: string) {
     return
   }
   const system = planetSystemFor(id as Parameters<typeof planetSystemFor>[0])
-  if (system) {
+  // Mars has system ephemeris for the local clock but no orrery route yet —
+  // fall through to the time page when the system route is absent.
+  if (system && router.hasRoute(system.routeName)) {
     void router.push({ name: system.routeName })
     return
   }

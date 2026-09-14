@@ -2,12 +2,14 @@
 import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
+import MarsLocalClock from '../components/clocks/MarsLocalClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
-import { groupedMarsSites, isMarsSiteId } from '../data/marsSites.ts'
+import { groupedMarsSites, isMarsSiteId, marsSite } from '../data/marsSites.ts'
 import { epochKey, SI_SECOND_CADENCE } from '../epoch.ts'
 import { marsCalendarDrivers } from '../lib/marsCalendars.ts'
 import { marsClockDrivers } from '../lib/marsClocks.ts'
+import { marsLocalSkyAt } from '../lib/marsLocalSky.ts'
 import { clampEpoch, solarSystemAt } from '../lib/kepler.ts'
 
 const epoch = inject(epochKey)
@@ -17,6 +19,9 @@ const viewed = epoch.viewed
 const live = epoch.live
 const snapshot = computed(() => solarSystemAt(viewed.value))
 const SITE_STORAGE_KEY = 'solestia.marsSite'
+
+type DialMode = 'prime' | 'local'
+const dialMode = ref<DialMode>('prime')
 
 function storedSiteId(): string {
   try {
@@ -39,10 +44,16 @@ const clock = computed(
 )
 const siteId = ref(storedSiteId())
 const siteGroups = groupedMarsSites()
+const site = computed(() => marsSite(siteId.value))
 const mars = computed(() => {
   const planet = snapshot.value.planets.find((body) => body.id === 'mars')
   if (!planet) throw new Error('Mars orbital elements are missing')
   return planet
+})
+
+const localSky = computed(() => {
+  if (dialMode.value !== 'local') return null
+  return marsLocalSkyAt(viewed.value, site.value.latitudeNorth, site.value.longitudeEast)
 })
 
 watch(siteId, (id) => {
@@ -79,13 +90,33 @@ function setViewed(at: Date) {
   <div class="page">
     <div class="studio">
       <section class="studio__center" aria-label="Planet clock">
-        <PlanetClock :planet="mars" />
+        <PlanetClock v-if="dialMode === 'prime'" :planet="mars" />
+        <MarsLocalClock v-else-if="localSky" :sky="localSky" />
+        <div class="studio__dial-toggle" role="group" aria-label="Planet clock mode">
+          <button
+            type="button"
+            class="names-toggle"
+            :aria-pressed="dialMode === 'prime'"
+            @click="dialMode = 'prime'"
+          >
+            <span class="names-toggle__label">Dial</span>
+            <span class="names-toggle__mode">Prime</span>
+          </button>
+          <button
+            type="button"
+            class="names-toggle"
+            :aria-pressed="dialMode === 'local'"
+            @click="dialMode = 'local'"
+          >
+            <span class="names-toggle__mode">Local</span>
+          </button>
+        </div>
         <label class="calendar-picker studio__zone">
           <span class="calendar-picker__label">Site</span>
           <select v-model="siteId" class="calendar-picker__select studio__zone-select">
             <optgroup v-for="group in siteGroups" :key="group.group" :label="group.group">
-              <option v-for="site in group.sites" :key="site.id" :value="site.id">
-                {{ site.name }}
+              <option v-for="entry in group.sites" :key="entry.id" :value="entry.id">
+                {{ entry.name }}
               </option>
             </optgroup>
           </select>
@@ -160,6 +191,13 @@ $page-medium: 36rem;
 
 .studio__center :deep(.clock:hover) {
   filter: none;
+}
+
+.studio__dial-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: $spacing-xs;
 }
 
 .studio__time,
@@ -254,6 +292,34 @@ $page-medium: 36rem;
   outline: none;
 }
 
+.names-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: $radius-sm;
+  padding: 0.2rem 0.45rem;
+  background: var(--background);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.names-toggle:hover,
+.names-toggle:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.names-toggle[aria-pressed='true'] .names-toggle__mode {
+  color: var(--accent);
+}
+
+.names-toggle__mode {
+  font-weight: 600;
+}
+
 @media (min-width: $page-medium) {
   .studio {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -267,15 +333,11 @@ $page-medium: 36rem;
   .studio {
     grid-template-columns: minmax(0, 1fr) minmax(12rem, 16rem) minmax(0, 1fr);
     grid-template-areas: 'time center date';
+    align-items: start;
   }
 
   .studio__center {
-    width: 100%;
-  }
-
-  .studio__time,
-  .studio__date {
-    margin-top: 5rem;
+    justify-self: center;
   }
 }
 </style>

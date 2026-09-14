@@ -1,7 +1,7 @@
 import type { SatelliteId } from './moons.ts'
 import type { PlanetId } from './planets.ts'
 
-export type PlanetSystemId = 'earth' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
+export type PlanetSystemId = 'earth' | 'mars' | 'jupiter' | 'saturn' | 'uranus' | 'neptune'
 
 export const VIEW_PLANE_CHOICES = ['ecliptic', 'equator', 'edge'] as const
 export type ViewPlane = (typeof VIEW_PLANE_CHOICES)[number]
@@ -48,6 +48,22 @@ export const PLANET_SYSTEMS: Record<PlanetSystemId, PlanetSystem> = {
     periapsisName: 'perigee',
     apoapsisName: 'apogee',
     defaultViewPlane: 'ecliptic',
+  },
+  mars: {
+    id: 'mars',
+    name: 'Mars',
+    symbol: '♂',
+    routeName: 'mars-system',
+    path: '/orrery/mars',
+    radiusKm: 3396.19,
+    radiusSymbol: 'R_M',
+    satelliteIds: ['phobos', 'deimos'],
+    innerSatelliteCount: 2,
+    orbitGroupName: 'Phobos and Deimos',
+    orbitPlaneName: 'each moon’s local Laplace plane',
+    periapsisName: 'periareion',
+    apoapsisName: 'apoareion',
+    defaultViewPlane: 'equator',
   },
   jupiter: {
     id: 'jupiter',
