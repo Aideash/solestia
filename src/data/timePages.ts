@@ -1,12 +1,13 @@
 import type { PlanetId } from './planets.ts'
 
-export type TimePageRouteName = 'earth-time' | 'mars-time'
+export type TimePageRouteName = 'earth-time' | 'mars-time' | 'mercury-time'
 
 export type TimePage = {
   routeName: TimePageRouteName
 }
 
 export const TIME_PAGES: Partial<Record<PlanetId, TimePage>> = {
+  mercury: { routeName: 'mercury-time' },
   earth: { routeName: 'earth-time' },
   mars: { routeName: 'mars-time' },
 }

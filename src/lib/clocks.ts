@@ -33,8 +33,12 @@ export type ClockDriver = {
   name: string
   nativeLocale?: string
   dial: ClockDial
+  /** Face that depends on the civil day (e.g. Ryzov leap dates). */
+  dialAt?(at: Date, timeZone?: string): ClockDial
   /** Milliseconds each hand takes to complete one revolution. */
   periods: ClockPeriods
+  /** Periods that depend on the civil day length. */
+  periodsAt?(at: Date, timeZone?: string): ClockPeriods
   /**
    * Milliseconds in the finest unit this clock shows, which is how often a live
    * readout has anything new to say. The dial cannot supply it: its minor ticks
@@ -44,8 +48,27 @@ export type ClockDriver = {
   /** Milliseconds elapsed in this clock's own day frame. */
   frameMs(at: Date, timeZone?: string): number
   numerals(locale?: string): ClockNumeral[]
+  /** Numerals that depend on the civil day length. */
+  numeralsAt?(at: Date, locale?: string, timeZone?: string): ClockNumeral[]
   hands(at: Date, timeZone?: string): ClockHands
   label(at: Date, locale?: string, timeZone?: string): string
+}
+
+export function dialOf(driver: ClockDriver, at: Date, timeZone?: string): ClockDial {
+  return driver.dialAt?.(at, timeZone) ?? driver.dial
+}
+
+export function periodsOf(driver: ClockDriver, at: Date, timeZone?: string): ClockPeriods {
+  return driver.periodsAt?.(at, timeZone) ?? driver.periods
+}
+
+export function numeralsOf(
+  driver: ClockDriver,
+  at: Date,
+  locale?: string,
+  timeZone?: string,
+): ClockNumeral[] {
+  return driver.numeralsAt?.(at, locale, timeZone) ?? driver.numerals(locale)
 }
 
 const MS_PER_DAY = 86_400_000
@@ -337,7 +360,7 @@ export function withHandAt(
   fraction: number,
   timeZone?: string,
 ): Date {
-  const period = driver.periods[hand]
+  const period = periodsOf(driver, at, timeZone)[hand]
   if (period === null) return at
   const residue = modulo(driver.frameMs(at, timeZone), period)
   const target = modulo(fraction, 1) * period
