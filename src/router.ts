@@ -59,6 +59,12 @@ export const router = createRouter({
       meta: { subtitle: 'Earth · epicycles' },
     },
     {
+      path: '/orrery/mercury/time',
+      name: 'mercury-time',
+      component: () => import('./views/MercuryTimePage.vue'),
+      meta: { subtitle: 'Mercury · time' },
+    },
+    {
       path: '/orrery/mars/time',
       name: 'mars-time',
       component: () => import('./views/MarsTimePage.vue'),

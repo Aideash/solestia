@@ -737,7 +737,10 @@ assert(
 
 assert(PLANET_SYSTEMS.earth.radiusKm === R_EARTH_KM, 'Earth radius table matches eclipse constant')
 assert(centuriesSinceJ2000(snapshot.at) === 0, 'J2000 noon is T=0')
-assert(vecAdd({ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }).x === 1)
+assert(
+  vecAdd({ x: 1, y: 0, z: 0 }, { x: 0, y: 1, z: 0 }).x === 1,
+  'vecAdd should sum components',
+)
 
 const lookAlongX = { x: 1, y: 0, z: 0 }
 assert(

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef } from 'vue'
-import { withHandAt, type ClockDriver, type ClockHand } from '../lib/clocks.ts'
+import { dialOf, numeralsOf, withHandAt, type ClockDriver, type ClockHand } from '../lib/clocks.ts'
 
 const props = defineProps<{
   at: Date
@@ -32,11 +32,11 @@ function dialPoint(radius: number, fraction: number): { x: number; y: number } {
   }
 }
 
-const dial = computed(() => props.driver.dial)
+const dial = computed(() => dialOf(props.driver, props.at, props.timeZone))
 const hands = computed(() => props.driver.hands(props.at, props.timeZone))
 const label = computed(() => props.driver.label(props.at, props.locale, props.timeZone))
 const numerals = computed(() =>
-  props.driver.numerals(props.locale).map((numeral) => {
+  numeralsOf(props.driver, props.at, props.locale, props.timeZone).map((numeral) => {
     const point = dialPoint(numberRadius, numeral.fraction)
     return { ...numeral, x: point.x, y: point.y }
   }),

@@ -20,7 +20,7 @@ const PHOBOS_PHASE_MID = 2.6
 const PHOBOS_PHASE_SPAN = 0.55
 const DEIMOS_PHASE_MID = 1.7
 const DEIMOS_PHASE_SPAN = 0.35
-const EMBEDDED_RING = 40
+const EMBEDDED_RING = 38
 const SUN_POLAR_RADIUS = EMBEDDED_RING - 2.2
 const PHOBOS_POLAR_RADIUS = EMBEDDED_RING + 1.4
 const DEIMOS_POLAR_RADIUS = EMBEDDED_RING + 2.8
@@ -352,7 +352,6 @@ const label = computed(() => {
       :r="EMBEDDED_RING"
       fill="none"
       :stroke="MARS_GLYPH"
-      stroke-width="1.5"
     />
     <line
       class="clock__mars-shaft"
@@ -362,12 +361,7 @@ const label = computed(() => {
       :x2="marsArrow.shaft.x2"
       :y2="marsArrow.shaft.y2"
     />
-    <path
-      class="clock__mars-arrow"
-      fill="none"
-      :stroke="MARS_GLYPH"
-      :d="marsArrow.head"
-    />
+    <path class="clock__mars-arrow" fill="none" :stroke="MARS_GLYPH" :d="marsArrow.head" />
     <circle
       v-for="marker in polarMarkers"
       :key="marker.key"
@@ -512,14 +506,18 @@ const label = computed(() => {
   stroke-width: 1.1;
 }
 
+.clock__embedded-ring {
+  stroke-width: 2.5;
+}
+
 .clock__mars-shaft {
-  stroke-width: 1.5;
+  stroke-width: 2.5;
   stroke-linecap: butt;
 }
 
 .clock__mars-arrow {
-  stroke-width: 1.5;
-  stroke-linecap: butt;
+  stroke-width: 2.5;
+  stroke-linecap: round;
   stroke-linejoin: miter;
 }
 

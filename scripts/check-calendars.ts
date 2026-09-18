@@ -141,7 +141,10 @@ assert.equal(mayanRoundGrid.yearNav, false)
 assert.equal(mayanRoundGrid.headingPrimary, 'Kʼankʼin')
 assert.equal(mayanRoundGrid.cells.length, 20)
 assert.equal(mayanRoundGrid.columnCount, 5)
-assert.equal(mayanRoundGrid.cells.find((cell) => cell.key === mayanRound.dateParts(mayanAt).key)?.label, '4 Ajaw')
+assert.equal(
+  mayanRoundGrid.cells.find((cell) => cell.key === mayanRound.dateParts(mayanAt).key)?.label,
+  '4 Ajaw',
+)
 
 const mayanLongGrid = mayanLong.monthGrid(mayanAt)
 assert.ok(mayanLongGrid)
