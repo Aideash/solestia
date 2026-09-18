@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef } from 'vue'
-import {
-  dialOf,
-  numeralsOf,
-  withHandAt,
-  type ClockDriver,
-  type ClockHand,
-} from '../lib/clocks.ts'
+import { dialOf, numeralsOf, withHandAt, type ClockDriver, type ClockHand } from '../lib/clocks.ts'
 
 const props = defineProps<{
   at: Date

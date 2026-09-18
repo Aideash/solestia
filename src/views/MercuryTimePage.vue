@@ -2,18 +2,18 @@
 import { computed, inject, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AnalogClock from '../components/AnalogClock.vue'
+import MercuryLocalClock from '../components/clocks/MercuryLocalClock.vue'
 import MonthCalendar from '../components/MonthCalendar.vue'
 import PlanetClock from '../components/PlanetClock.vue'
 import {
   DEFAULT_MERCURY_SITE_ID,
   groupedMercurySites,
   isMercurySiteId,
-  mercurySite,
 } from '../data/mercurySites.ts'
 import { epochKey, SI_SECOND_CADENCE } from '../epoch.ts'
-import { mercurySystem, mercurySystems, type MercuryCadenceSource } from '../lib/mercurySystems.ts'
 import { clampEpoch, solarSystemAt } from '../lib/kepler.ts'
-import { wrapUnit } from '../lib/mercuryTime.ts'
+import { mercuryLocalSkyAt } from '../lib/mercuryLocalSky.ts'
+import { mercurySystem, mercurySystems, type MercuryCadenceSource } from '../lib/mercurySystems.ts'
 
 const epoch = inject(epochKey)
 if (!epoch) throw new Error('Epoch context is missing')
@@ -41,7 +41,6 @@ const system = computed(() => mercurySystem(systemId.value))
 const cadenceSource = ref<MercuryCadenceSource>('day')
 const siteId = ref(storedSiteId())
 const siteGroups = groupedMercurySites()
-const site = computed(() => mercurySite(siteId.value))
 
 const mercury = computed(() => {
   const planet = snapshot.value.planets.find((body) => body.id === 'mercury')
@@ -49,12 +48,11 @@ const mercury = computed(() => {
   return planet
 })
 
-const dialPlanet = computed(() => {
-  if (dialMode.value === 'prime') return mercury.value
-  return {
-    ...mercury.value,
-    dayFraction: wrapUnit(mercury.value.dayFraction + site.value.longitudeEast / 360),
-  }
+const dialPlanet = computed(() => mercury.value)
+
+const localSky = computed(() => {
+  if (dialMode.value !== 'local') return null
+  return mercuryLocalSkyAt(viewed.value, siteId.value, snapshot.value)
 })
 
 const dayClock = computed(() => system.value.dayClock)
@@ -106,7 +104,8 @@ function setViewed(at: Date) {
   <div class="page">
     <div class="studio">
       <section class="studio__center" aria-label="Planet clock">
-        <PlanetClock :planet="dialPlanet" />
+        <PlanetClock v-if="dialMode === 'prime'" :planet="dialPlanet" />
+        <MercuryLocalClock v-else-if="localSky" :sky="localSky" />
         <div class="studio__dial-toggle" role="group" aria-label="Planet clock mode">
           <button
             type="button"
@@ -127,8 +126,8 @@ function setViewed(at: Date) {
           </button>
         </div>
         <p class="studio__note">
-          Center dial uses apparent solar time (can run backward near perihelion). Civil systems
-          below use mean time.
+          Local dial shows true solar and sidereal sky time (true solar can run backward near
+          perihelion). Civil systems below use mean time.
         </p>
         <label class="calendar-picker studio__zone">
           <span class="calendar-picker__label">Site</span>

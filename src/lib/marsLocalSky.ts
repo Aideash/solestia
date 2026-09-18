@@ -63,9 +63,7 @@ function wrapUnit(value: number): number {
   return ((value % 1) + 1) % 1
 }
 
-function polarCap(
-  state: ReturnType<typeof horizonState>,
-): PolarCap | null {
+function polarCap(state: ReturnType<typeof horizonState>): PolarCap | null {
   if (state.kind === 'alwaysUp') return 'overhead'
   if (state.kind === 'alwaysDown') return 'underfoot'
   return null
@@ -158,9 +156,7 @@ function moonSky(
     waxing: phase.waxing,
     sizeFactor: moonSizeFactor(distanceKm, aKm, e),
     crossings:
-      horizon.kind === 'crosses'
-        ? bracketCrossings(fraction, horizon.rise, horizon.set)
-        : [],
+      horizon.kind === 'crosses' ? bracketCrossings(fraction, horizon.rise, horizon.set) : [],
     polar: polarCap(horizon),
     sublatitude: moonLocal.subsolarLatitude,
   }

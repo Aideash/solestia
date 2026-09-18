@@ -161,7 +161,11 @@ function makePhasesCalendar(): CalendarDriver {
     },
     shiftYear(instant, delta, siteId) {
       const parts = phaseParts(instant, siteId)
-      return dateFromLocalCycleIndex(parts.cycleIndex + delta * CYCLES_PER_SOL, parts.timeOfCycle, siteId)
+      return dateFromLocalCycleIndex(
+        parts.cycleIndex + delta * CYCLES_PER_SOL,
+        parts.timeOfCycle,
+        siteId,
+      )
     },
   }
 }

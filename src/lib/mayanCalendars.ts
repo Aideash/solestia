@@ -284,7 +284,8 @@ type RoundParts = CalendarDateParts & {
 function roundDateParts(instant: Date, timeZone?: string): RoundParts {
   const days = mayanDaysAt(instant, timeZone)
   const round = mayanCalendarRound(days)
-  const monthCode = round.haabMonthIndex === 18 ? 'wayeb' : `H${String(round.haabMonthIndex + 1).padStart(2, '0')}`
+  const monthCode =
+    round.haabMonthIndex === 18 ? 'wayeb' : `H${String(round.haabMonthIndex + 1).padStart(2, '0')}`
   return {
     year: Math.floor((days + 348) / 365),
     month: round.haabMonthIndex + 1,

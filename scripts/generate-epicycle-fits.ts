@@ -258,7 +258,7 @@ function optimize(
   for (const start of starts) {
     let vector = [...start]
     let score = angularRms(samples, vector, rates, seed.apsisRateRadPerDay)
-    let steps = vector.map((_, index) => {
+    let steps: number[] = vector.map((_, index) => {
       if (index === 0) return 0.04
       if (index === 1 || index === 2 || index % 2 === 0) return 0.2
       return 0.08

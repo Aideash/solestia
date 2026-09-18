@@ -24,7 +24,7 @@ export const PHASE_EPOCH_MS = Math.round(
   J2000_MS - (MEAN_ANOMALY_J2000_DEG / MEAN_MOTION_DEG_PER_DAY) * MS_PER_DAY,
 )
 
-/** Ryzov Mercurian calendar epoch (Mariner 10 / poster): 1974-03-29 UTC midnight. */
+/** Ryzov Mercurial calendar epoch (Mariner 10 / poster): 1974-03-29 UTC midnight. */
 export const RYZOV_EPOCH_MS = Date.UTC(1974, 2, 29)
 
 export const MERCURY_YEAR_DAYS = 360 / MEAN_MOTION_DEG_PER_DAY
@@ -352,11 +352,7 @@ export function dateFromLocalRyzov(
   timeOfDate: number,
   siteId?: string,
 ): Date {
-  const global = shiftRyzovDate(
-    cycle,
-    dateOfCycle,
-    -ryzovWeekZone(siteId) * RYZOV_DATES_PER_WEEK,
-  )
+  const global = shiftRyzovDate(cycle, dateOfCycle, -ryzovWeekZone(siteId) * RYZOV_DATES_PER_WEEK)
   return dateFromRyzov(global.cycle, global.dateOfCycle, timeOfDate)
 }
 

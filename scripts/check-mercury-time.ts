@@ -130,7 +130,7 @@ assert.ok(Math.abs(ryzovRound.getTime() - ryzovEpoch.getTime()) < 1)
 assert.ok(Math.abs(localMeanSolFraction(epoch, 'iau-pm')) < 1e-9)
 assert.ok(Math.abs(localMeanSolFraction(epoch, 'iau-pm') - meanSolFraction(epoch)) < 1e-12)
 assert.ok(Math.abs(meanYearFraction(epoch)) < 1e-9)
-assert.ok(Math.abs((meanSolFraction(epoch) + 180 / 360) % 1 - 0.5) < 1e-12)
+assert.ok(Math.abs(((meanSolFraction(epoch) + 180 / 360) % 1) - 0.5) < 1e-12)
 assert.ok(Math.abs(localMeanSolFraction(epoch, 'hun-kal') - 340 / 360) < 1e-9)
 
 // Systems and clocks.
