@@ -83,13 +83,17 @@ function openSystem(id: string) {
       />
     </template>
     <template #controls>
-      <RouterLink
-        v-if="selectedTimePage"
-        class="nav-pill"
-        :to="{ name: selectedTimePage.routeName }"
-      >
-        Date and time →
-      </RouterLink>
+      <div class="forwards">
+        <RouterLink class="nav-pill" :to="{ name: 'meteor-showers' }">Meteor showers →</RouterLink>
+        <hr v-if="selectedTimePage" class="forwards__rule" />
+        <RouterLink
+          v-if="selectedTimePage"
+          class="nav-pill"
+          :to="{ name: selectedTimePage.routeName }"
+        >
+          Date and time →
+        </RouterLink>
+      </div>
       <button
         type="button"
         class="frame-toggle"
@@ -123,3 +127,24 @@ function openSystem(id: string) {
     </template>
   </SystemStage>
 </template>
+
+<style scoped lang="scss">
+.forwards {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.forwards .nav-pill {
+  margin-top: 0;
+}
+
+.forwards__rule {
+  width: 100%;
+  margin: 0.15rem 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+</style>

@@ -27,6 +27,9 @@ describe('home and orrery routes', () => {
     expect(router.getRoutes().find(({ name }) => name === 'kuiper-belt')?.path).toBe(
       '/orrery/kuiper-belt',
     )
+    expect(router.getRoutes().find(({ name }) => name === 'meteor-showers')?.path).toBe(
+      '/orrery/meteor-showers',
+    )
   })
 })
 

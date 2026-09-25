@@ -1,4 +1,11 @@
-import { wrapRad, type Vec3 } from './kepler.ts'
+import {
+  eccentricAnomaly,
+  heliocentricEcliptic,
+  heliocentricEclipticVelocity,
+  wrapRad,
+  wrapRadSigned,
+  type Vec3,
+} from './kepler.ts'
 
 const VALUES_PER_SAMPLE = 6
 
@@ -40,6 +47,14 @@ export type PackedEphemerisOptions<Id extends string> = {
   sampleCount: number
   /** Central GM, AU³/day². Must match the frame the stored vectors are in. */
   mu: number
+  /**
+   * How to reconstruct states between stored knots. `hermite` (default) matches
+   * position, velocity, and two-body acceleration at each end — right for low-e
+   * orbits whose knots already resolve the shape. `kepler` interpolates
+   * osculating elements so a high-e perihelion that falls between knots still
+   * follows the ellipse instead of a Cartesian chord through the Sun.
+   */
+  interpolation?: 'hermite' | 'kepler'
 }
 
 function dot(a: Vec3, b: Vec3): number {
@@ -108,6 +123,60 @@ export function osculatingOrbit(position: Vec3, velocity: Vec3, mu: number): Osc
   }
 }
 
+function boundEllipse(orbit: OsculatingOrbit): boolean {
+  return orbit.a > 0 && orbit.e >= 0 && orbit.e < 1 && Number.isFinite(orbit.meanAnomaly)
+}
+
+function lerpAngle(start: number, end: number, t: number): number {
+  return wrapRad(start + wrapRadSigned(end - start) * t)
+}
+
+function interpolateOrbit(
+  start: OsculatingOrbit,
+  end: OsculatingOrbit,
+  t: number,
+): OsculatingOrbit {
+  return {
+    a: start.a + (end.a - start.a) * t,
+    e: start.e + (end.e - start.e) * t,
+    i: start.i + (end.i - start.i) * t,
+    Omega: lerpAngle(start.Omega, end.Omega, t),
+    varpi: lerpAngle(start.varpi, end.varpi, t),
+    meanAnomaly: lerpAngle(start.meanAnomaly, end.meanAnomaly, t),
+    perihelionLongitude: lerpAngle(start.perihelionLongitude, end.perihelionLongitude, t),
+  }
+}
+
+function stateFromOrbit(orbit: OsculatingOrbit, mu: number): StateVector {
+  const E = eccentricAnomaly(orbit.meanAnomaly, orbit.e)
+  return {
+    position: heliocentricEcliptic(orbit.a, orbit.e, E, orbit.i, orbit.Omega, orbit.varpi),
+    velocity: heliocentricEclipticVelocity(
+      orbit.a,
+      orbit.e,
+      E,
+      orbit.i,
+      orbit.Omega,
+      orbit.varpi,
+      mu,
+    ),
+  }
+}
+
+function keplerInterpolate(
+  start: StateVector,
+  end: StateVector,
+  t: number,
+  mu: number,
+): StateVector | null {
+  if (t <= 0) return start
+  if (t >= 1) return end
+  const startOrbit = osculatingOrbit(start.position, start.velocity, mu)
+  const endOrbit = osculatingOrbit(end.position, end.velocity, mu)
+  if (!boundEllipse(startOrbit) || !boundEllipse(endOrbit)) return null
+  return stateFromOrbit(interpolateOrbit(startOrbit, endOrbit, t), mu)
+}
+
 /**
  * Half-year knots of Horizons states, reconstructed with a quintic Hermite.
  *
@@ -170,6 +239,10 @@ export class PackedEphemeris<Id extends string> {
     const t = Math.min(1, Math.max(0, samplePosition - lower))
     const start = knot(lower)
     const end = knot(lower + 1)
+    if (this.options.interpolation === 'kepler') {
+      const kepler = keplerInterpolate(start, end, t, mu)
+      if (kepler) return kepler
+    }
     const startAcceleration = centralAcceleration(start.position, mu)
     const endAcceleration = centralAcceleration(end.position, mu)
 

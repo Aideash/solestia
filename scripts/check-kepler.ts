@@ -8,6 +8,7 @@ import {
 import { MOONS } from '../src/data/moons.ts'
 import { ASTEROIDS } from '../src/data/asteroids.ts'
 import { KUIPER_OBJECTS } from '../src/data/kuiperObjects.ts'
+import { METEOR_PARENTS } from '../src/data/meteorShowers.ts'
 import {
   ASTEROID_EPHEMERIS_HOLDOUTS,
   ASTEROID_EPHEMERIS_SAMPLE_COUNT,
@@ -22,6 +23,13 @@ import {
   KUIPER_EPHEMERIS_STEP_DAYS,
   KUIPER_EPHEMERIS_VALIDATION,
 } from '../src/data/generated/kuiperEphemerides.ts'
+import {
+  METEOR_EPHEMERIS_HOLDOUTS,
+  METEOR_EPHEMERIS_SAMPLE_COUNT,
+  METEOR_EPHEMERIS_START_JD,
+  METEOR_EPHEMERIS_STEP_DAYS,
+  METEOR_EPHEMERIS_VALIDATION,
+} from '../src/data/generated/meteorEphemerides.ts'
 import { PLANET_SYSTEM_BANDS, SOLAR_SYSTEM_BANDS } from '../src/data/orbitalBands.ts'
 import { PLANET_SYSTEMS } from '../src/data/planetSystems.ts'
 import {
@@ -52,6 +60,12 @@ import {
   kuiperObjectOrbitPositions,
   kuiperObjectPositionAtJulianDate,
 } from '../src/lib/kuiperEphemeris.ts'
+import {
+  meteorParentOrbitPositions,
+  meteorParentPositionAtJulianDate,
+  meteorShowersAt,
+  trueAnomaliesAtRadius,
+} from '../src/lib/meteorEphemeris.ts'
 import { resolveOrbitalBands, resolveSolarOrbitalBands } from '../src/lib/orbitalBands.ts'
 import { radialScale, solarOrbitOuterR } from '../src/lib/radialScale.ts'
 
@@ -902,6 +916,184 @@ for (const asteroid of [hygiea, interamnia]) {
 
 console.log(
   `ok  asteroid ephemerides and rotation cover 1800–2050; seven unique bodies, worst stored holdout ${worstAsteroidHoldoutError.toExponential(2)} AU; drawn orbits hold to ${worstDrawnWobble.toFixed(3)} AU and ${worstApsidalWobble.toFixed(2)}° across a knot interval`,
+)
+
+const meteorIds = new Set(METEOR_PARENTS.map((parent) => parent.id))
+assert(METEOR_PARENTS.length === 6, `expected six meteor parents, got ${METEOR_PARENTS.length}`)
+assert(meteorIds.size === METEOR_PARENTS.length, 'meteor parent IDs must be unique')
+for (let index = 1; index < METEOR_PARENTS.length; index++) {
+  assert(
+    METEOR_PARENTS[index].a > METEOR_PARENTS[index - 1].a,
+    `meteor parents must run inward to outward: ${METEOR_PARENTS[index - 1].id}, ${METEOR_PARENTS[index].id}`,
+  )
+}
+
+const meteorEphemerisEndJd =
+  METEOR_EPHEMERIS_START_JD + (METEOR_EPHEMERIS_SAMPLE_COUNT - 1) * METEOR_EPHEMERIS_STEP_DAYS
+assert(
+  METEOR_EPHEMERIS_START_JD <= julianDate(new Date(ELEMENTS_VALID_FROM_MS)),
+  'meteor ephemerides must cover the start of the app epoch',
+)
+assert(
+  meteorEphemerisEndJd >= julianDate(new Date(ELEMENTS_VALID_TO_MS)),
+  'meteor ephemerides must cover the end of the app epoch',
+)
+
+let worstMeteorHoldoutError = 0
+for (const parent of METEOR_PARENTS) {
+  const validation = METEOR_EPHEMERIS_VALIDATION[parent.id]
+  assert(
+    validation.maxAngularErrorDeg < 0.25,
+    `${parent.name} generator holdouts exceed 0.25°: ${validation.maxAngularErrorDeg}°`,
+  )
+  assert(
+    validation.maxPositionErrorAu < 0.02,
+    `${parent.name} generator holdouts exceed 0.02 AU: ${validation.maxPositionErrorAu} AU`,
+  )
+  for (const holdout of METEOR_EPHEMERIS_HOLDOUTS[parent.id]) {
+    const actual = meteorParentPositionAtJulianDate(parent.id, holdout.jd)
+    const error = Math.hypot(
+      actual.x - holdout.position[0],
+      actual.y - holdout.position[1],
+      actual.z - holdout.position[2],
+    )
+    worstMeteorHoldoutError = Math.max(worstMeteorHoldoutError, error)
+    assert(error < 1e-3, `${parent.name} holdout position error is ${error} AU`)
+  }
+}
+
+for (const date of [
+  new Date('1800-01-01T00:00:00Z'),
+  new Date('2026-01-01T00:00:00Z'),
+  new Date('2050-01-01T00:00:00Z'),
+]) {
+  const snapshot = meteorShowersAt(date)
+  assert(
+    snapshot.parents.length === METEOR_PARENTS.length,
+    `meteor parents missing at ${date.toISOString()}`,
+  )
+  assert(
+    snapshot.mercury.id === 'mercury' &&
+      snapshot.earth.id === 'earth' &&
+      snapshot.neptune.id === 'neptune',
+  )
+  for (const parent of snapshot.parents) {
+    assert(
+      Number.isFinite(parent.longitude) &&
+        Number.isFinite(parent.distanceAu) &&
+        Number.isFinite(parent.yearFraction) &&
+        Number.isFinite(parent.tail.longitude) &&
+        parent.yearFraction >= 0 &&
+        parent.yearFraction < 1 &&
+        parent.tail.inPlane >= 0 &&
+        parent.tail.inPlane <= 1,
+      `${parent.name} has an implausible state at ${date.toISOString()}`,
+    )
+    const orbit = meteorParentOrbitPositions(parent.id, date)
+    assert(orbit.length >= 16, `${parent.name} orbit should sample`)
+  }
+  const phaethon = snapshot.parents.find((parent) => parent.id === 'phaethon')
+  assert(phaethon, 'Phaethon missing')
+  assert(
+    phaethon.earthCrossings.length === 2,
+    `Phaethon should cross 1 AU twice, got ${phaethon.earthCrossings.length}`,
+  )
+  for (const parent of snapshot.parents) {
+    assert(parent.earthCrossings.length >= 1, `${parent.name} should have an Earth approach`)
+    for (const crossing of parent.earthCrossings) {
+      const radius = Math.hypot(crossing.position.x, crossing.position.y, crossing.position.z)
+      assert(
+        Math.abs(radius - 1) < 0.25,
+        `${parent.name} crossing should sit near 1 AU, got ${radius.toFixed(3)} AU`,
+      )
+    }
+  }
+  const halley = snapshot.parents.find((parent) => parent.id === 'halley')
+  assert(halley, 'Halley missing')
+  if (halley.earthCrossings.length === 2) {
+    assert(
+      (halley.earthCrossings[0].shower?.name ?? '').includes('Aquariid'),
+      'Halley’s southern crossing should be η Aquariids',
+    )
+    assert(
+      (halley.earthCrossings[1].shower?.name ?? '').includes('Orionid'),
+      'Halley’s northern crossing should be Orionids',
+    )
+  }
+}
+
+/**
+ * Cartesian Hermite of 30-day knots chords through Phaethon’s perihelion and
+ * spins the fitted ellipse. Kepler interpolation between those same knots must
+ * keep the body on a bound trail and the perihelion direction steady.
+ */
+{
+  const perihelionWindow = Array.from(
+    { length: 21 },
+    (_, index) => new Date(Date.UTC(2026, 7, 21 + index)),
+  )
+  const catalogQ =
+    METEOR_PARENTS.find((parent) => parent.id === 'phaethon')!.a *
+    (1 - METEOR_PARENTS.find((parent) => parent.id === 'phaethon')!.e)
+  const perihelia: number[] = []
+  let closestAu = Infinity
+  for (const date of perihelionWindow) {
+    const phaethon = meteorShowersAt(date).parents.find((parent) => parent.id === 'phaethon')
+    assert(phaethon, 'Phaethon missing near 2026 perihelion')
+    closestAu = Math.min(closestAu, phaethon.distanceAu)
+    perihelia.push(deg(phaethon.perihelionLongitude))
+    const trail = meteorParentOrbitPositions(phaethon.id, date, 360)
+    const trailError = Math.min(
+      ...trail.map((point) =>
+        Math.hypot(
+          point.x - phaethon.position.x,
+          point.y - phaethon.position.y,
+          point.z - phaethon.position.z,
+        ),
+      ),
+    )
+    assert(
+      trailError < 0.02,
+      `Phaethon should stay on its trail through perihelion, ${trailError.toFixed(3)} AU off on ${date.toISOString().slice(0, 10)}`,
+    )
+  }
+  assert(
+    closestAu > catalogQ - 0.03,
+    `Phaethon 2026 perihelion should stay near catalog q=${catalogQ.toFixed(3)} AU, got ${closestAu.toFixed(3)} AU`,
+  )
+  const apsidal = Math.max(...perihelia) - Math.min(...perihelia)
+  const wrapped = Math.min(apsidal, 360 - apsidal)
+  assert(
+    wrapped < 2,
+    `Phaethon’s perihelion direction should hold across 2026 perihelion, swung ${wrapped.toFixed(2)}°`,
+  )
+}
+
+/**
+ * High-e Kepler iteration that starts at +π after aphelion (M wrapped negative)
+ * diverges. Halley in 2026 sits there; a failed solve teleports it inside 3 AU.
+ */
+for (let day = 0; day < 10; day++) {
+  const date = new Date(Date.UTC(2026, 8, 19 + day, 12))
+  const halley = meteorShowersAt(date).parents.find((parent) => parent.id === 'halley')
+  assert(halley, `Halley missing on ${date.toISOString().slice(0, 10)}`)
+  assert(
+    halley.distanceAu > 34 && halley.distanceAu < 36,
+    `Halley should stay near aphelion in Sep 2026, was ${halley.distanceAu.toFixed(3)} AU on ${date.toISOString().slice(0, 10)}`,
+  )
+}
+
+assert(
+  trueAnomaliesAtRadius(2, 0.1, 1).length === 0,
+  'non-crossing ellipse should have no 1 AU roots',
+)
+assert(
+  trueAnomaliesAtRadius(1, 0.5, 1).length === 2,
+  'Earth-crossing ellipse should have two 1 AU roots',
+)
+
+console.log(
+  `ok  meteor shower parents cover 1800–2050; six unique bodies, worst stored holdout ${worstMeteorHoldoutError.toExponential(2)} AU; 1 AU crossings and anti-sun tails populate`,
 )
 
 const kuiperIds = new Set(KUIPER_OBJECTS.map((object) => object.id))

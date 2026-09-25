@@ -236,7 +236,10 @@ function evaluate(planet: Planet, t: number) {
 /** Newton solve of Kepler's equation M = E − e sin E. M, E in radians. */
 export function eccentricAnomaly(meanAnomaly: number, e: number): number {
   const M = wrapRadSigned(meanAnomaly)
-  let E = e < 0.8 ? M : Math.PI
+  // High-e starts at ±π so the derivative 1 − e cos E is not ~1−e at perihelion.
+  // The sign has to follow M: past aphelion wrapRadSigned is negative, and
+  // starting at +π then diverges (Halley at M≈193° jumped AU-scale day to day).
+  let E = e < 0.8 ? M : Math.PI * Math.sign(M)
   for (let i = 0; i < 12; i++) {
     const dE = (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E))
     E -= dE
@@ -304,6 +307,34 @@ export function projectEclipticTopDown(
   return {
     x: cx + radius * (along / distance),
     y: cy - radius * (up / distance),
+    depth: position.z,
+  }
+}
+
+/**
+ * Ecliptic top-down that compresses cylindrical radius ρ = √(x²+y²) instead of
+ * the full three-dimensional distance. Use when the diagram’s story is “how far
+ * past Neptune does this orbit reach”: scaling by |r| then foreshortening by
+ * cos(latitude) pulls high-inclination aphelia back onto Neptune’s ring even
+ * when Q is 50–110 AU. Depth is still ecliptic height.
+ */
+export function projectEclipticCylindrical(
+  cx: number,
+  cy: number,
+  position: Vec3,
+  earthPerihelionLongitude: number,
+  scale: (distance: number) => number,
+): EdgeOnPoint {
+  const cosP = Math.cos(earthPerihelionLongitude)
+  const sinP = Math.sin(earthPerihelionLongitude)
+  const along = position.x * sinP - position.y * cosP
+  const up = position.x * cosP + position.y * sinP
+  const rho = Math.hypot(position.x, position.y)
+  if (rho < 1e-12) return { x: cx, y: cy, depth: position.z }
+  const radius = scale(rho)
+  return {
+    x: cx + radius * (along / rho),
+    y: cy - radius * (up / rho),
     depth: position.z,
   }
 }
@@ -411,6 +442,45 @@ export function eccentricAnomalyFromTrue(nu: number, e: number): number {
   return 2 * Math.atan2(Math.sqrt(1 - e) * Math.sin(nu / 2), Math.sqrt(1 + e) * Math.cos(nu / 2))
 }
 
+/** Heliocentric ecliptic position on a Kepler ellipse at true anomaly `nu`. */
+export function keplerPositionAtTrueAnomaly(
+  a: number,
+  e: number,
+  i: number,
+  Omega: number,
+  varpi: number,
+  nu: number,
+): Vec3 {
+  return heliocentricEcliptic(a, e, eccentricAnomalyFromTrue(nu, e), i, Omega, varpi)
+}
+
+/** Argument of perihelion ω = ϖ − Ω. */
+export function argumentOfPerihelion(varpi: number, Omega: number): number {
+  return wrapRad(varpi - Omega)
+}
+
+/**
+ * True anomalies where the body crosses the ecliptic: ascending (south→north)
+ * at argument of latitude 0, descending at π.
+ */
+export function nodeTrueAnomalies(omega: number): { ascending: number; descending: number } {
+  return {
+    ascending: wrapRad(-omega),
+    descending: wrapRad(Math.PI - omega),
+  }
+}
+
+/**
+ * Fixed true anomalies for a smooth closed orbit path: apsides, latus-rectum
+ * ends, and a few perihelion-side quarters. Callers merge in the ecliptic nodes.
+ */
+export function orbitPathTrueAnomalies(e: number): number[] {
+  // High-e orbits bend hardest near perihelion under a radial remap, so keep
+  // extra geometric stations there; apoapsis is already gentle.
+  const nearPeri = e > 0.7 ? [-Math.PI / 6, Math.PI / 6, -Math.PI / 3, Math.PI / 3] : []
+  return [...nearPeri, -Math.PI / 2, 0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2].map(wrapRad)
+}
+
 /** Sample a Keplerian ellipse in ecliptic (or Laplace) rectangular coordinates. */
 export function keplerOrbitPositions(
   a: number,
@@ -422,8 +492,7 @@ export function keplerOrbitPositions(
 ): Vec3[] {
   return Array.from({ length: samples }, (_, index) => {
     const nu = (index / samples) * Math.PI * 2
-    const E = eccentricAnomalyFromTrue(nu, e)
-    return heliocentricEcliptic(a, e, E, i, Omega, varpi)
+    return keplerPositionAtTrueAnomaly(a, e, i, Omega, varpi, nu)
   })
 }
 
@@ -561,6 +630,28 @@ export function eccentricityWobble(e: number): number {
   return nu - (E - e * Math.sin(E))
 }
 
+/** Rotate orbital-plane (x, y) into ecliptic coordinates by ω, i, Ω. */
+function orbitalPlaneToEcliptic(
+  xPlane: number,
+  yPlane: number,
+  i: number,
+  Omega: number,
+  varpi: number,
+): Vec3 {
+  const omega = varpi - Omega
+  const cosW = Math.cos(omega)
+  const sinW = Math.sin(omega)
+  const cosO = Math.cos(Omega)
+  const sinO = Math.sin(Omega)
+  const cosI = Math.cos(i)
+  const sinI = Math.sin(i)
+  return {
+    x: (cosW * cosO - sinW * sinO * cosI) * xPlane + (-sinW * cosO - cosW * sinO * cosI) * yPlane,
+    y: (cosW * sinO + sinW * cosO * cosI) * xPlane + (-sinW * sinO + cosW * cosO * cosI) * yPlane,
+    z: sinW * sinI * xPlane + cosW * sinI * yPlane,
+  }
+}
+
 /**
  * Heliocentric position in ecliptic-of-J2000 rectangular coordinates, AU.
  * Orbital-plane coordinates rotated by argument of perihelion, inclination and
@@ -576,18 +667,27 @@ export function heliocentricEcliptic(
 ): Vec3 {
   const xPlane = a * (Math.cos(E) - e)
   const yPlane = a * Math.sqrt(1 - e * e) * Math.sin(E)
-  const omega = varpi - Omega
-  const cosW = Math.cos(omega)
-  const sinW = Math.sin(omega)
-  const cosO = Math.cos(Omega)
-  const sinO = Math.sin(Omega)
-  const cosI = Math.cos(i)
-  const sinI = Math.sin(i)
-  return {
-    x: (cosW * cosO - sinW * sinO * cosI) * xPlane + (-sinW * cosO - cosW * sinO * cosI) * yPlane,
-    y: (cosW * sinO + sinW * cosO * cosI) * xPlane + (-sinW * sinO + cosW * cosO * cosI) * yPlane,
-    z: sinW * sinI * xPlane + cosW * sinI * yPlane,
-  }
+  return orbitalPlaneToEcliptic(xPlane, yPlane, i, Omega, varpi)
+}
+
+/**
+ * Two-body heliocentric velocity in ecliptic-of-J2000, AU/day, matching
+ * `heliocentricEcliptic` at the same eccentric anomaly.
+ */
+export function heliocentricEclipticVelocity(
+  a: number,
+  e: number,
+  E: number,
+  i: number,
+  Omega: number,
+  varpi: number,
+  mu: number,
+): Vec3 {
+  const n = Math.sqrt(mu / (a * a * a))
+  const dEdt = n / (1 - e * Math.cos(E))
+  const vxPlane = -a * Math.sin(E) * dEdt
+  const vyPlane = a * Math.sqrt(Math.max(0, 1 - e * e)) * Math.cos(E) * dEdt
+  return orbitalPlaneToEcliptic(vxPlane, vyPlane, i, Omega, varpi)
 }
 
 /** Ecliptic-of-J2000 to ICRF equatorial coordinates. */

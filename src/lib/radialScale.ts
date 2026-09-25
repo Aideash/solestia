@@ -99,3 +99,72 @@ export function extendRadialScaleInward(
     return anchorRadius + t * (joinRadius - anchorRadius)
   }
 }
+
+/**
+ * Smooth log map through two anchors: `nearDistance` → `nearR`, `farDistance` →
+ * `farR`. Distances outside that span keep the same log, so comet perihelia
+ * inside 1 AU still dive toward the Sun without pinning the whole scale to
+ * Phaethon’s perihelion.
+ */
+export function logRadialScale(
+  nearDistance: number,
+  farDistance: number,
+  nearR: number,
+  farR: number,
+): (distance: number) => number {
+  const lo = Math.max(nearDistance, Number.EPSILON)
+  const hi = Math.max(farDistance, lo * (1 + Number.EPSILON))
+  const logLo = Math.log(lo)
+  const logSpan = Math.log(hi) - logLo
+  const radiusSpan = farR - nearR
+  if (!(logSpan > 0)) return () => farR
+
+  return (distance: number) => {
+    const d = Math.max(distance, Number.EPSILON)
+    const t = (Math.log(d) - logLo) / logSpan
+    return nearR + t * radiusSpan
+  }
+}
+
+/**
+ * Fits one smooth logarithmic map to the complete radial reach of a set of
+ * orbits. Both perihelia and aphelia contribute, so eccentric comet orbits set
+ * the scale alongside planets instead of being squeezed around planetary pins.
+ */
+export function extentRadialScale(
+  orbits: readonly OrbitExtent[],
+  innerR: number,
+  outerR: number,
+): (distance: number) => number {
+  const extents = orbits.flatMap(({ a, e }) => [a * (1 - e), a * (1 + e)])
+  const valid = extents.filter((distance) => distance > 0 && Number.isFinite(distance))
+  if (valid.length === 0) return () => outerR
+  return logRadialScale(Math.min(...valid), Math.max(...valid), innerR, outerR)
+}
+
+/**
+ * Smooth power map through two anchors: `nearDistance` → `nearR`, `farDistance` →
+ * `farR`. Gentler than a log for the decades past Neptune, so comet aphelia that
+ * only modestly exceed 30 AU still read past Neptune’s ring instead of stacking
+ * on it. `power` of 1 is linear; values in (0, 1) compress.
+ */
+export function powerRadialScale(
+  nearDistance: number,
+  farDistance: number,
+  nearR: number,
+  farR: number,
+  power = 0.5,
+): (distance: number) => number {
+  const lo = Math.max(nearDistance, Number.EPSILON)
+  const hi = Math.max(farDistance, lo * (1 + Number.EPSILON))
+  const loP = Math.pow(lo, power)
+  const spanP = Math.pow(hi, power) - loP
+  const radiusSpan = farR - nearR
+  if (!(spanP > 0)) return () => farR
+
+  return (distance: number) => {
+    const d = Math.max(distance, Number.EPSILON)
+    const t = (Math.pow(d, power) - loP) / spanP
+    return nearR + t * radiusSpan
+  }
+}

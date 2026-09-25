@@ -23,6 +23,7 @@
     "check:clocks": "node --experimental-strip-types --no-warnings scripts/check-clocks.ts",
     "check:mercury-time": "node --experimental-strip-types --no-warnings scripts/check-mercury-time.ts",
     "generate:asteroids": "node --experimental-strip-types --no-warnings scripts/generate-asteroid-ephemerides.ts && prettier --write src/data/generated/asteroidEphemerides.ts",
+    "generate:meteors": "node --experimental-strip-types --no-warnings scripts/generate-meteor-ephemerides.ts && prettier --write src/data/generated/meteorEphemerides.ts",
     "generate:land": "node --experimental-strip-types --no-warnings scripts/generate-earth-land.ts && prettier --write src/data/generated/earthLand.ts",
     "generate:kuiper": "node --experimental-strip-types --no-warnings scripts/generate-kuiper-ephemerides.ts && prettier --write src/data/generated/kuiperEphemerides.ts",
     "generate:solar-wind": "node --experimental-strip-types --no-warnings scripts/generate-solar-wind.ts && prettier --write src/data/generated/solarWind.ts",

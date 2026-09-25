@@ -28,6 +28,12 @@ export const router = createRouter({
       meta: { subtitle: 'Kuiper belt' },
     },
     {
+      path: '/orrery/meteor-showers',
+      name: 'meteor-showers',
+      component: () => import('./views/MeteorShowersPage.vue'),
+      meta: { subtitle: 'Meteor showers' },
+    },
+    {
       path: '/orrery/earth',
       name: 'earth-system',
       component: PlanetSystemPage,

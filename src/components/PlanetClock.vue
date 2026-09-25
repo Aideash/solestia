@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useId } from 'vue'
 import { PLANET_SYSTEMS } from '../data/planetSystems.ts'
 import type { PlanetState, SatelliteState } from '../lib/kepler.ts'
 
@@ -17,15 +17,22 @@ type ClockBody = Pick<
   number?: number
 }
 
-const props = defineProps<{
-  planet: ClockBody | SatelliteState
-  parentSystem?: keyof typeof PLANET_SYSTEMS
-  mirroredLabel?: boolean
-  selected?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    planet: ClockBody | SatelliteState
+    parentSystem?: keyof typeof PLANET_SYSTEMS
+    mirroredLabel?: boolean
+    selected?: boolean
+    /** Hide the day face for bodies without a meaningful spin dial (comets). */
+    face?: 'day' | 'none'
+  }>(),
+  { face: 'day' },
+)
 
 const emit = defineEmits<{ select: [] }>()
 
+const centerClipId = `clock-center-${useId()}`
+const showFace = computed(() => props.face !== 'none')
 const isSatellite = computed(() => 'parentFraction' in props.planet)
 const clockMark = computed(() => {
   if (props.planet.symbol) return props.planet.symbol
@@ -129,6 +136,7 @@ const label = computed(() => {
     ? `month since ${parent.value?.periapsisName ?? 'periapsis'}`
     : 'year since perihelion'
   const parts = [`${planet.name} — ${percent(planet.yearFraction)} through its ${orbitWord}`]
+  if (!showFace.value) return parts.join(' · ')
   if (planet.solsPerYear >= 2) {
     const total = Math.round(planet.solsPerYear)
     const day = Math.min(Math.floor(planet.yearFraction * planet.solsPerYear) + 1, total)
@@ -154,7 +162,7 @@ const label = computed(() => {
 <template>
   <svg
     class="clock"
-    :class="{ selected }"
+    :class="{ selected, 'clock--rim-only': !showFace }"
     viewBox="0 0 100 100"
     role="img"
     :aria-label="label"
@@ -198,31 +206,44 @@ const label = computed(() => {
     />
     <circle class="clock__year-head" :cx="yearHead.x" :cy="yearHead.y" r="2.4" />
 
-    <circle class="clock__face" :cx="cx" :cy="cy" :r="faceRadius" />
-    <line
-      v-for="tick in dayTicks"
-      :key="`day-${tick.key}`"
-      class="clock__day-tick"
-      :class="{ 'clock__day-tick--major': tick.major }"
-      :x1="tick.x1"
-      :y1="tick.y1"
-      :x2="tick.x2"
-      :y2="tick.y2"
-    />
-    <path v-if="daySector" class="clock__day-sector" :d="daySector" />
-    <line class="clock__midnight" :x1="cx" :y1="cy" :x2="cx" :y2="cy - sectorRadius" />
-    <line class="clock__day-hand" :x1="cx" :y1="cy" :x2="dayHand.x" :y2="dayHand.y" />
-    <text
-      v-if="parentMark"
-      class="clock__parent"
-      :x="parentMark.x"
-      :y="parentMark.y"
-      text-anchor="middle"
-      dominant-baseline="middle"
-    >
-      {{ parent?.symbol }}
-    </text>
-    <circle class="clock__hub" :cx="cx" :cy="cy" r="2.2" />
+    <g v-if="!showFace" class="clock__center">
+      <defs>
+        <clipPath :id="centerClipId">
+          <circle :cx="cx" :cy="cy" :r="faceRadius" />
+        </clipPath>
+      </defs>
+      <g :clip-path="`url(#${centerClipId})`">
+        <slot name="center" />
+      </g>
+    </g>
+
+    <template v-if="showFace">
+      <circle class="clock__face" :cx="cx" :cy="cy" :r="faceRadius" />
+      <line
+        v-for="tick in dayTicks"
+        :key="`day-${tick.key}`"
+        class="clock__day-tick"
+        :class="{ 'clock__day-tick--major': tick.major }"
+        :x1="tick.x1"
+        :y1="tick.y1"
+        :x2="tick.x2"
+        :y2="tick.y2"
+      />
+      <path v-if="daySector" class="clock__day-sector" :d="daySector" />
+      <line class="clock__midnight" :x1="cx" :y1="cy" :x2="cx" :y2="cy - sectorRadius" />
+      <line class="clock__day-hand" :x1="cx" :y1="cy" :x2="dayHand.x" :y2="dayHand.y" />
+      <text
+        v-if="parentMark"
+        class="clock__parent"
+        :x="parentMark.x"
+        :y="parentMark.y"
+        text-anchor="middle"
+        dominant-baseline="middle"
+      >
+        {{ parent?.symbol }}
+      </text>
+      <circle class="clock__hub" :cx="cx" :cy="cy" r="2.2" />
+    </template>
   </svg>
 </template>
 
